@@ -1,0 +1,632 @@
+<?php
+require_once 'config.php';
+
+// जांचें कि उपयोगकर्ता लॉग इन है और वह विद्यालय उपयोगकर्ता है
+checkUserType('school');
+
+// विद्यालय की जानकारी प्राप्त करें
+ $school_id = $_SESSION['school_id'];
+ $stmt = $conn->prepare("SELECT * FROM schools WHERE id = ?");
+ $stmt->execute([$school_id]);
+ $school = $stmt->fetch(PDO::FETCH_ASSOC);
+
+// वर्तमान महीना और वर्ष प्राप्त करें
+ $current_month = date('F');
+ $current_year = date('Y');
+
+// जांचें कि school_enrollment टेबल मौजूद है या नहीं
+try {
+    $stmt = $conn->prepare("SELECT 1 FROM school_enrollment LIMIT 1");
+    $stmt->execute();
+} catch (PDOException $e) {
+    // यदि टेबल मौजूद नहीं है, तो इसे बनाएं
+    $createTableQuery = "CREATE TABLE IF NOT EXISTS `school_enrollment` (
+      `id` int(11) NOT NULL AUTO_INCREMENT,
+      `school_id` int(11) NOT NULL,
+      `month` varchar(20) NOT NULL,
+      `year` int(4) NOT NULL,
+      `class_1` int(11) NOT NULL DEFAULT 0,
+      `class_2` int(11) NOT NULL DEFAULT 0,
+      `class_3` int(11) NOT NULL DEFAULT 0,
+      `class_4` int(11) NOT NULL DEFAULT 0,
+      `class_5` int(11) NOT NULL DEFAULT 0,
+      `class_6` int(11) NOT NULL DEFAULT 0,
+      `class_7` int(11) NOT NULL DEFAULT 0,
+      `class_8` int(11) NOT NULL DEFAULT 0,
+      `class_9` int(11) NOT NULL DEFAULT 0,
+      `class_10` int(11) NOT NULL DEFAULT 0,
+      `class_11` int(11) NOT NULL DEFAULT 0,
+      `class_12` int(11) NOT NULL DEFAULT 0,
+      `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (`id`),
+      UNIQUE KEY `unique_school_month_year` (`school_id`, `month`, `year`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+    
+    $conn->exec($createTableQuery);
+}
+
+// फॉर्म सबमिशन प्रोसेस करें
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        // पहले जांचें कि इस महीने के लिए पहले से डेटा मौजूद है या नहीं
+        $stmt = $conn->prepare("SELECT id FROM school_enrollment WHERE school_id = ? AND month = ? AND year = ?");
+        $stmt->execute([$school_id, $current_month, $current_year]);
+        $existingRecord = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($existingRecord) {
+            // यदि रिकॉर्ड मौजूद है, तो इसे अपडेट करें
+            $updateQuery = "UPDATE school_enrollment SET ";
+            $updateParams = [];
+            for ($i = 1; $i <= 12; $i++) {
+                $updateQuery .= "class_{$i} = ?, ";
+                $updateParams[] = isset($_POST['enrollment'][$i]) ? $_POST['enrollment'][$i] : 0;
+            }
+            $updateQuery = rtrim($updateQuery, ", ");
+            $updateQuery .= " WHERE school_id = ? AND month = ? AND year = ?";
+            $updateParams[] = $school_id;
+            $updateParams[] = $current_month;
+            $updateParams[] = $current_year;
+            
+            $stmt = $conn->prepare($updateQuery);
+            $stmt->execute($updateParams);
+        } else {
+            // यदि रिकॉर्ड मौजूद नहीं है, तो नया रिकॉर्ड डालें
+            $insertQuery = "INSERT INTO school_enrollment (school_id, month, year, ";
+            $valuesQuery = "VALUES (?, ?, ?, ";
+            $insertParams = [$school_id, $current_month, $current_year];
+            
+            for ($i = 1; $i <= 12; $i++) {
+                $insertQuery .= "class_{$i}, ";
+                $valuesQuery .= "?, ";
+                $insertParams[] = isset($_POST['enrollment'][$i]) ? $_POST['enrollment'][$i] : 0;
+            }
+            
+            $insertQuery = rtrim($insertQuery, ", ");
+            $valuesQuery = rtrim($valuesQuery, ", ");
+            $insertQuery .= ") " . $valuesQuery . ")";
+            
+            $stmt = $conn->prepare($insertQuery);
+            $stmt->execute($insertParams);
+        }
+        
+        $success_message = "नामांकन डेटा सफलतापूर्वक सहेजा गया!";
+    } catch (PDOException $e) {
+        $error_message = "नामांकन डेटा सहेजते समय त्रुटि: " . $e->getMessage();
+    }
+}
+
+// वर्तमान महीने के लिए नामांकन डेटा प्राप्त करें
+ $stmt = $conn->prepare("SELECT * FROM school_enrollment WHERE school_id = ? AND month = ? AND year = ?");
+ $stmt->execute([$school_id, $current_month, $current_year]);
+ $enrollment_data = $stmt->fetch(PDO::FETCH_ASSOC);
+
+// यदि कोई डेटा नहीं है, तो डिफ़ॉल्ट मान सेट करें
+if (!$enrollment_data) {
+    $enrollment_data = [];
+    for ($i = 1; $i <= 12; $i++) {
+        $enrollment_data["class_{$i}"] = 0;
+    }
+}
+?>
+
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>नामांकन - बिहार शिक्षा विभाग</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #6a1b9a;
+            --secondary-color: #9c27b0;
+            --accent-color: #ce93d8;
+            --light-color: #f3e5f5;
+            --dark-color: #4a148c;
+        }
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #f8f9fa;
+        }
+        
+        .sidebar {
+            background: linear-gradient(to bottom, var(--primary-color), var(--secondary-color));
+            min-height: 100vh;
+            color: white;
+            position: fixed;
+            width: 250px;
+            z-index: 100;
+            transition: all 0.3s ease;
+        }
+        
+        .sidebar .nav-link {
+            color: white;
+            padding: 15px 20px;
+            border-radius: 0;
+            transition: all 0.3s ease;
+        }
+        
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-left: 4px solid white;
+        }
+        
+        .sidebar .nav-link i {
+            margin-right: 10px;
+        }
+        
+        .main-content {
+            margin-left: 250px;
+            padding: 20px;
+        }
+        
+        .navbar {
+            background: white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.15);
+        }
+        
+        .card-header {
+            background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
+            color: white;
+            font-weight: 600;
+            border-radius: 15px 15px 0 0 !important;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
+            border: none;
+            border-radius: 50px;
+            padding: 10px 25px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(106, 27, 154, 0.3);
+        }
+        
+        .form-control {
+            border-radius: 10px;
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: center;
+            font-weight: 600;
+        }
+        
+        .form-control:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.25rem rgba(106, 27, 154, 0.25);
+        }
+        
+        .enrollment-table {
+            background-color: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+        }
+        
+        .enrollment-table thead {
+            background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
+            color: white;
+        }
+        
+        .enrollment-table th {
+            font-weight: 600;
+            padding: 12px 8px;
+            text-align: center;
+            border: none;
+        }
+        
+        .enrollment-table td {
+            padding: 8px;
+            text-align: center;
+            vertical-align: middle;
+            border: 1px solid #e9ecef;
+        }
+        
+        .enrollment-table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .class-group-title {
+            background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 10px 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            font-weight: 600;
+            text-align: center;
+        }
+        
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+        
+        .mobile-menu-btn {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 101;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 1.5rem;
+        }
+        
+        .enrollment-summary {
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .summary-item:last-child {
+            border-bottom: none;
+            font-weight: 600;
+            background-color: var(--light-color);
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 5px;
+        }
+        
+        @media (max-width: 992px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            
+            .sidebar.active {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+            }
+            
+            .mobile-menu-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .enrollment-table {
+                font-size: 0.8rem;
+            }
+            
+            .enrollment-table th, .enrollment-table td {
+                padding: 6px 4px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- मोबाइल मेन्यू बटन -->
+    <button class="mobile-menu-btn" id="mobileMenuBtn">
+        <i class="fas fa-bars"></i>
+    </button>
+    
+    <!-- साइडबार -->
+    <div class="sidebar" id="sidebar">
+        <div class="p-4 text-center">
+            <h4>बिहार शिक्षा विभाग</h4>
+            <p class="mb-0">विद्यालय डैशबोर्ड</p>
+        </div>
+        
+        <hr class="text-white">
+        
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link" href="school_dashboard.php">
+                    <i class="fas fa-tachometer-alt"></i> डैशबोर्ड
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="school_profile.php">
+                    <i class="fas fa-school"></i> विद्यालय प्रोफाइल
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link active" href="enrollment.php">
+                    <i class="fas fa-user-graduate"></i> नामांकन
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="teachers.php">
+                    <i class="fas fa-chalkboard-teacher"></i> शिक्षक विवरण
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="attendance.php">
+                    <i class="fas fa-calendar-check"></i> उपस्थिति विवरणी
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="salary_status.php">
+                    <i class="fas fa-money-check-alt"></i> वेतन स्थिति
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="salary_complaint.php">
+                    <i class="fas fa-exclamation-triangle"></i> वेतन शिकायत
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="logout.php">
+                    <i class="fas fa-sign-out-alt"></i> लॉग आउट
+                </a>
+            </li>
+        </ul>
+    </div>
+    
+    <!-- मुख्य सामग्री -->
+    <div class="main-content">
+        <!-- नेविगेशन बार -->
+        <nav class="navbar navbar-expand-lg navbar-light mb-4">
+            <div class="container-fluid">
+                <h4 class="mb-0">नामांकन</h4>
+                <div class="d-flex align-items-center">
+                    <div class="user-avatar me-2">
+                        <?php echo strtoupper(substr($_SESSION['name'], 0, 2)); ?>
+                    </div>
+                    <div>
+                        <h6 class="mb-0"><?php echo $_SESSION['name']; ?></h6>
+                        <small class="text-muted">विद्यालय</small>
+                    </div>
+                </div>
+            </div>
+        </nav>
+        
+        <!-- सफलता/त्रुटि संदेश -->
+        <?php if (isset($success_message)): ?>
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <?php echo $success_message; ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        <?php endif; ?>
+        
+        <?php if (isset($error_message)): ?>
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <?php echo $error_message; ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        <?php endif; ?>
+        
+        <!-- नामांकन फॉर्म -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">माह: <?php echo $current_month . ' ' . $current_year; ?> के लिए नामांकन विवरण</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-4">
+                    <h5>विद्यालय: <?php echo $school['name']; ?></h5>
+                    <p class="mb-0">श्रेणी: कक्षा 1-12</p>
+                </div>
+                
+                <form method="post" action="" id="enrollmentForm">
+                    <!-- प्राथमिक कक्षाएं (1-5) -->
+                    <div class="class-group mb-4">
+                        <div class="class-group-title">
+                            <i class="fas fa-child me-2"></i>प्राथमिक कक्षाएं (1-5)
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table enrollment-table">
+                                <thead>
+                                    <tr>
+                                        <th>कक्षा</th>
+                                        <th>1</th>
+                                        <th>2</th>
+                                        <th>3</th>
+                                        <th>4</th>
+                                        <th>5</th>
+                                        <th>कुल</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>विद्यार्थी संख्या</strong></td>
+                                        <?php for ($i = 1; $i <= 5; $i++): ?>
+                                        <td>
+                                            <input type="number" name="enrollment[<?php echo $i; ?>]" class="form-control" 
+                                                   value="<?php echo isset($enrollment_data["class_{$i}"]) ? $enrollment_data["class_{$i}"] : 0; ?>" 
+                                                   min="0" onchange="updateSummary()">
+                                        </td>
+                                        <?php endfor; ?>
+                                        <td id="primaryTotal">0</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- माध्यमिक कक्षाएं (6-8) -->
+                    <div class="class-group mb-4">
+                        <div class="class-group-title">
+                            <i class="fas fa-book me-2"></i>माध्यमिक कक्षाएं (6-8)
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table enrollment-table">
+                                <thead>
+                                    <tr>
+                                        <th>कक्षा</th>
+                                        <th>6</th>
+                                        <th>7</th>
+                                        <th>8</th>
+                                        <th>कुल</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>विद्यार्थी संख्या</strong></td>
+                                        <?php for ($i = 6; $i <= 8; $i++): ?>
+                                        <td>
+                                            <input type="number" name="enrollment[<?php echo $i; ?>]" class="form-control" 
+                                                   value="<?php echo isset($enrollment_data["class_{$i}"]) ? $enrollment_data["class_{$i}"] : 0; ?>" 
+                                                   min="0" onchange="updateSummary()">
+                                        </td>
+                                        <?php endfor; ?>
+                                        <td id="secondaryTotal">0</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- उच्च माध्यमिक कक्षाएं (9-12) -->
+                    <div class="class-group mb-4">
+                        <div class="class-group-title">
+                            <i class="fas fa-graduation-cap me-2"></i>उच्च माध्यमिक कक्षाएं (9-12)
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table enrollment-table">
+                                <thead>
+                                    <tr>
+                                        <th>कक्षा</th>
+                                        <th>9</th>
+                                        <th>10</th>
+                                        <th>11</th>
+                                        <th>12</th>
+                                        <th>कुल</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>विद्यार्थी संख्या</strong></td>
+                                        <?php for ($i = 9; $i <= 12; $i++): ?>
+                                        <td>
+                                            <input type="number" name="enrollment[<?php echo $i; ?>]" class="form-control" 
+                                                   value="<?php echo isset($enrollment_data["class_{$i}"]) ? $enrollment_data["class_{$i}"] : 0; ?>" 
+                                                   min="0" onchange="updateSummary()">
+                                        </td>
+                                        <?php endfor; ?>
+                                        <td id="higherSecondaryTotal">0</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- नामांकन सारांश -->
+                    <div class="enrollment-summary">
+                        <h6 class="mb-3">नामांकन सारांश</h6>
+                        <div class="summary-item">
+                            <span>प्राथमिक कक्षाएं (1-5):</span>
+                            <span id="primarySummary">0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span>माध्यमिक कक्षाएं (6-8):</span>
+                            <span id="secondarySummary">0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span>उच्च माध्यमिक कक्षाएं (9-12):</span>
+                            <span id="higherSecondarySummary">0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span>कुल नामांकन:</span>
+                            <span id="grandSummary">0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center mt-4">
+                        <button type="submit" class="btn btn-primary btn-lg">सहेजें</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // मोबाइल मेन्यू टॉगल
+        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
+            document.getElementById('sidebar').classList.toggle('active');
+        });
+        
+        // विंडो आकार बदलने पर साइडबार की जांच करें
+        window.addEventListener('resize', function() {
+            if (window.innerWidth > 992) {
+                document.getElementById('sidebar').classList.remove('active');
+            }
+        });
+        
+        // नामांकन सारांश अपडेट करें
+        function updateSummary() {
+            let primaryTotal = 0;
+            let secondaryTotal = 0;
+            let higherSecondaryTotal = 0;
+            
+            // प्राथमिक कक्षाओं का योग
+            for (let i = 1; i <= 5; i++) {
+                const value = parseInt(document.querySelector(`input[name="enrollment[${i}]"]`).value) || 0;
+                primaryTotal += value;
+            }
+            
+            // माध्यमिक कक्षाओं का योग
+            for (let i = 6; i <= 8; i++) {
+                const value = parseInt(document.querySelector(`input[name="enrollment[${i}]"]`).value) || 0;
+                secondaryTotal += value;
+            }
+            
+            // उच्च माध्यमिक कक्षाओं का योग
+            for (let i = 9; i <= 12; i++) {
+                const value = parseInt(document.querySelector(`input[name="enrollment[${i}]"]`).value) || 0;
+                higherSecondaryTotal += value;
+            }
+            
+            // कुल योग
+            const grandTotal = primaryTotal + secondaryTotal + higherSecondaryTotal;
+            
+            // टेबल में कुल अपडेट करें
+            document.getElementById('primaryTotal').textContent = primaryTotal;
+            document.getElementById('secondaryTotal').textContent = secondaryTotal;
+            document.getElementById('higherSecondaryTotal').textContent = higherSecondaryTotal;
+            
+            // सारांश अपडेट करें
+            document.getElementById('primarySummary').textContent = primaryTotal;
+            document.getElementById('secondarySummary').textContent = secondaryTotal;
+            document.getElementById('higherSecondarySummary').textContent = higherSecondaryTotal;
+            document.getElementById('grandSummary').textContent = grandTotal;
+        }
+        
+        // पेज लोड होने पर सारांश अपडेट करें
+        document.addEventListener('DOMContentLoaded', function() {
+            updateSummary();
+        });
+    </script>
+</body>
+</html>
