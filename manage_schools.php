@@ -1,11 +1,28 @@
 <?php
 require_once 'config.php';
 
-// जांचें कि उपयोगकर्ता लॉग इन है और वह एडमिन है
-checkUserType('admin');
+// जांचें कि उपयोगकर्ता लॉग इन है और वह एडमिन, जिला स्टाफ, जिला प्रोग्राम ऑफिसर, जिला शिक्षा अधिकारी, DDO या ब्लॉक ऑफिसर है
+if (!isset($_SESSION['user_type']) || 
+    !in_array($_SESSION['user_type'], 
+    ['admin', 'district_staff', 'district_program_officer', 'district_education_officer', 'ddo', 'block_officer'])) {
+    header("Location: login.php");
+    exit();
+}
 
-// विद्यालय जोड़ने/संपादित करने की प्रक्रिया
+// पेजिनेशन वेरिएबल्स
+ $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+ $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 20;
+ $offset = ($page - 1) * $per_page;
+
+// विद्यालय जोड़ने/संपादित करने की प्रक्रिया - केवल एडमिन के लिए
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_school') {
+    // केवल एडमिन को विद्यालय जोड़ने/संपादित करने की अनुमति है
+    if ($_SESSION['user_type'] !== 'admin') {
+        $_SESSION['error_message'] = "आपको विद्यालय जानकारी संपादित करने की अनुमति नहीं है।";
+        header('Location: manage_schools.php');
+        exit;
+    }
+    
     try {
         $school_id = $_POST['school_id'];
         
@@ -81,8 +98,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// CSV से विद्यालय अपलोड करने की प्रक्रिया
+// CSV से विद्यालय अपलोड करने की प्रक्रिया - केवल एडमिन के लिए
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['school_file']) && $_FILES['school_file']['error'] === UPLOAD_ERR_OK) {
+    // केवल एडमिन को CSV अपलोड करने की अनुमति है
+    if ($_SESSION['user_type'] !== 'admin') {
+        $_SESSION['error_message'] = "आपको CSV फ़ाइल अपलोड करने की अनुमति नहीं है।";
+        header('Location: manage_schools.php');
+        exit;
+    }
+    
     $file = $_FILES['school_file'];
     $file_ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
     
@@ -274,8 +298,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['school_file']) && $_
     exit;
 }
 
-// विद्यालय हटाने की प्रक्रिया
+// विद्यालय हटाने की प्रक्रिया - केवल एडमिन के लिए
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_school') {
+    // केवल एडमिन को विद्यालय हटाने की अनुमति है
+    if ($_SESSION['user_type'] !== 'admin') {
+        $_SESSION['error_message'] = "आपको विद्यालय हटाने की अनुमति नहीं है।";
+        header('Location: manage_schools.php');
+        exit;
+    }
+    
     try {
         $stmt = $conn->prepare("DELETE FROM schools WHERE id = ?");
         $stmt->execute([$_POST['school_id']]);
@@ -287,13 +318,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// विद्यालयों की सूची प्राप्त करें
- $stmt = $conn->query("SELECT s.*, d.name as district_name, b.name as block_name FROM schools s LEFT JOIN districts d ON s.district_id = d.id LEFT JOIN blocks b ON s.block_id = b.id ORDER BY s.name");
+// उपयोगकर्ता प्रकार के आधार पर विद्यालयों की सूची प्राप्त करें
+ $user_type = $_SESSION['user_type'];
+ $where_clause = "";
+ $params = [];
+ $count_params = [];
+
+if (in_array($user_type, ['district_staff', 'district_program_officer', 'district_education_officer'])) {
+    // जिला स्तरीय उपयोगकर्ताओं के लिए उनके जिले के विद्यालय
+    $district_id = $_SESSION['district_id'];
+    $where_clause = "WHERE s.district_id = ?";
+    $params = [$district_id];
+    $count_params = [$district_id];
+} elseif (in_array($user_type, ['ddo', 'block_officer'])) {
+    // ब्लॉक स्तरीय उपयोगकर्ताओं के लिए उनके ब्लॉक के विद्यालय
+    $block_id = $_SESSION['block_id'];
+    $where_clause = "WHERE s.block_id = ?";
+    $params = [$block_id];
+    $count_params = [$block_id];
+}
+
+// कुल विद्यालयों की संख्या प्राप्त करें
+ $count_query = "SELECT COUNT(*) FROM schools s $where_clause";
+ $stmt = $conn->prepare($count_query);
+ $stmt->execute($count_params);
+ $total_schools = $stmt->fetchColumn();
+
+// पेजिनेशन क्वेरी
+if ($per_page == 'all') {
+    // सभी रिकॉर्ड दिखाएं
+    $limit_clause = "";
+} else {
+    // LIMIT के साथ क्वेरी
+    $limit_clause = "LIMIT $per_page OFFSET $offset";
+}
+
+ $stmt = $conn->prepare("SELECT s.*, d.name as district_name, b.name as block_name FROM schools s 
+                        LEFT JOIN districts d ON s.district_id = d.id 
+                        LEFT JOIN blocks b ON s.block_id = b.id 
+                        $where_clause 
+                        ORDER BY s.name
+                        $limit_clause");
+ $stmt->execute($params);
  $schools = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// पेजिनेशन गणना
+ $total_pages = ($per_page == 'all') ? 1 : ceil($total_schools / $per_page);
+ $current_page = ($per_page == 'all') ? 1 : $page;
 
 // सभी जिले और प्रखंड प्राप्त करें
  $stmt = $conn->query("SELECT * FROM districts ORDER BY name");
  $districts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// उपयोगकर्ता अनुमतियाँ जांचें
+ $can_edit = ($_SESSION['user_type'] === 'admin');
+ $can_upload = ($_SESSION['user_type'] === 'admin');
 ?>
 
 <!DOCTYPE html>
@@ -331,6 +410,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         .csv-format-columns { max-height: 200px; overflow-y: auto; font-size: 0.85rem; }
         .serial-number { font-weight: 600; color: var(--primary-color); text-align: center; }
         .password-section { display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee; }
+        .detail-row { display: flex; margin-bottom: 10px; }
+        .detail-label { font-weight: 600; width: 150px; color: var(--primary-color); }
+        .detail-value { flex: 1; }
+        .user-type-badge { 
+            display: inline-block; 
+            padding: 3px 8px; 
+            border-radius: 12px; 
+            font-size: 0.75rem; 
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .user-type-admin { background-color: #6a1b9a; color: white; }
+        .user-type-district { background-color: #2196F3; color: white; }
+        .user-type-block { background-color: #4CAF50; color: white; }
+        .pagination-container { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            flex-wrap: wrap; 
+            margin-top: 20px; 
+        }
+        .pagination-info { 
+            color: #666; 
+            font-size: 0.9rem; 
+        }
+        .pagination-controls .page-link { 
+            color: var(--primary-color); 
+            border-color: #ddd; 
+        }
+        .pagination-controls .page-link:hover { 
+            color: white; 
+            background-color: var(--primary-color); 
+            border-color: var(--primary-color); 
+        }
+        .pagination-controls .page-item.active .page-link { 
+            background-color: var(--primary-color); 
+            border-color: var(--primary-color); 
+        }
+        .per-page-selector { 
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+        }
+        .per-page-selector select { 
+            width: auto; 
+        }
         @media (max-width: 992px) { .sidebar { transform: translateX(-100%); width: 280px; } .sidebar.active { transform: translateX(0); } .main-content { margin-left: 0; } .mobile-menu-btn { display: flex; align-items: center; justify-content: center; } }
     </style>
 </head>
@@ -339,26 +464,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     <button class="mobile-menu-btn" id="mobileMenuBtn"><i class="fas fa-bars"></i></button>
     
     <!-- साइडबार -->
-    <div class="sidebar" id="sidebar">
-        <div class="p-4 text-center">
-            <h4>बिहार शिक्षा विभाग</h4>
-            <p class="mb-0">एडमिन पैनल</p>
-        </div>
-        <hr class="text-white">
-        <ul class="nav flex-column">
-            <li class="nav-item"><a class="nav-link" href="admin_dashboard.php"><i class="fas fa-tachometer-alt"></i> डैशबोर्ड</a></li>
-            <li class="nav-item"><a class="nav-link" href="manage_users.php"><i class="fas fa-users-cog"></i> उपयोगकर्ता प्रबंधन</a></li>
-            <li class="nav-item"><a class="nav-link active" href="manage_schools.php"><i class="fas fa-school"></i> विद्यालय प्रबंधन</a></li>
-            <li class="nav-item"><a class="nav-link" href="salary_management.php"><i class="fas fa-money-check-alt"></i> वेतन प्रबंधन</a></li>
-            <li class="nav-item"><a class="nav-link" href="eshikshakosh_data.php"><i class="fas fa-database"></i> ई-शिक्षकोष डेटा</a></li>
-            <li class="nav-item"><a class="nav-link" href="manage_letters.php"><i class="fas fa-envelope"></i> पत्र प्रबंधन</a></li>
-            <li class="nav-item"><a class="nav-link" href="manage_notices.php"><i class="fas fa-bullhorn"></i> नोटिस प्रबंधन</a></li>
-            <li class="nav-item"><a class="nav-link" href="manage_sliders.php"><i class="fas fa-images"></i> स्लाइडर प्रबंधन</a></li>
-            <li class="nav-item"><a class="nav-link" href="manage_categories.php"><i class="fas fa-tags"></i> श्रेणी प्रबंधन</a></li>
-            <li class="nav-item"><a class="nav-link" href="manage_months.php"><i class="fas fa-calendar-alt"></i> महीना प्रबंधन</a></li>
-            <li class="nav-item"><a class="nav-link" href="logout.php"><i class="fas fa-sign-out-alt"></i> लॉग आउट</a></li>
-        </ul>
-    </div>
+    <?php include 'sidebar_template.php'; ?>
     
     <!-- मुख्य सामग्री -->
     <div class="main-content">
@@ -369,8 +475,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <div class="d-flex align-items-center">
                     <div class="user-avatar me-2"><?php echo strtoupper(substr($_SESSION['name'], 0, 2)); ?></div>
                     <div>
-                        <h6 class="mb-0"><?php echo $_SESSION['name']; ?></h6>
-                        <small class="text-muted">System Administrator</small>
+                        <h6 class="mb-0"><?php echo $_SESSION['name']; ?>
+                            <?php 
+                            // यूज़र टाइप के आधार पर बैज दिखाएं
+                            if ($_SESSION['user_type'] === 'admin') {
+                                echo '<span class="user-type-badge user-type-admin">एडमिन</span>';
+                            } elseif (in_array($_SESSION['user_type'], ['district_staff', 'district_program_officer', 'district_education_officer'])) {
+                                echo '<span class="user-type-badge user-type-district">जिला अधिकारी</span>';
+                            } elseif (in_array($_SESSION['user_type'], ['ddo', 'block_officer'])) {
+                                echo '<span class="user-type-badge user-type-block">ब्लॉक अधिकारी</span>';
+                            }
+                            ?>
+                        </h6>
+                        <small class="text-muted">System User</small>
                     </div>
                 </div>
             </div>
@@ -384,7 +501,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         <div class="alert alert-danger alert-dismissible fade show" role="alert"><?php echo $_SESSION['error_message']; unset($_SESSION['error_message']); ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
         <?php endif; ?>
 
-        <!-- अपलोड सेक्शन -->
+        <!-- अपलोड सेक्शन - केवल एडमिन के लिए दिखाएं -->
+        <?php if ($can_upload): ?>
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">CSV से विद्यालय अपलोड करें</h5>
@@ -415,6 +533,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 </div>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- विद्यालय सूची -->
         <div class="card">
@@ -422,14 +541,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <h5 class="mb-0">विद्यालय सूची</h5>
                 <div>
                     <button class="btn btn-sm btn-light" onclick="downloadData('excel')"><i class="fas fa-file-excel"></i> Excel</button>
+                    <?php if ($can_edit): ?>
                     <button type="button" class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#schoolModal">
                         <i class="fas fa-plus"></i> नया विद्यालय जोड़ें
                     </button>
+                    <?php endif; ?>
                 </div>
             </div>
             <div class="card-body">
                 <div class="mb-3">
-                    <input type="text" class="form-control" id="searchUdise" placeholder="UDISE कोड से खोजें...">
+                    <input type="text" class="form-control" id="searchInput" placeholder="विद्यालय का नाम या UDISE कोड से खोजें...">
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover" id="schoolTable">
@@ -446,8 +567,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             </tr>
                         </thead>
                         <tbody>
-                            <?php $serial = 1; foreach ($schools as $school): ?>
-                            <tr data-udise="<?php echo strtolower($school['udise_code']); ?>">
+                            <?php 
+                            $serial = ($per_page == 'all') ? 1 : (($page - 1) * $per_page) + 1;
+                            foreach ($schools as $school): 
+                            ?>
+                            <tr data-udise="<?php echo strtolower($school['udise_code']); ?>" data-name="<?php echo strtolower($school['name']); ?>">
                                 <td class="serial-number"><?php echo $serial++; ?></td>
                                 <td><?php echo $school['name']; ?></td>
                                 <td><?php echo $school['udise_code']; ?></td>
@@ -457,17 +581,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 <td><?php echo $school['head_of_school_number']; ?></td>
                                 <td>
                                     <button class="btn btn-sm btn-info" onclick="viewDetails(<?php echo htmlspecialchars(json_encode($school)); ?>)"><i class="fas fa-eye"></i></button>
+                                    <?php if ($can_edit): ?>
                                     <button class="btn btn-sm btn-primary" onclick="editSchool(<?php echo htmlspecialchars(json_encode($school)); ?>)"><i class="fas fa-edit"></i></button>
                                     <form method="post" style="display:inline-block;">
                                         <input type="hidden" name="action" value="delete_school">
                                         <input type="hidden" name="school_id" value="<?php echo $school['id']; ?>">
                                         <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('क्या आप वाकई इस विद्यालय को हटाना चाहते हैं?');"><i class="fas fa-trash"></i></button>
                                     </form>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+                </div>
+                
+                <!-- पेजिनेशन -->
+                <div class="pagination-container">
+                    <div class="pagination-info">
+                        <?php 
+                        if ($per_page == 'all') {
+                            echo "कुल " . $total_schools . " विद्यालय";
+                        } else {
+                            $start = ($page - 1) * $per_page + 1;
+                            $end = min($page * $per_page, $total_schools);
+                            echo "$start से $end कुल $total_schools विद्यालय";
+                        }
+                        ?>
+                    </div>
+                    
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="per-page-selector">
+                            <label for="perPageSelect" class="form-label mb-0">प्रति पृष्ठ:</label>
+                            <select class="form-select form-select-sm" id="perPageSelect" onchange="changePerPage(this.value)">
+                                <option value="20" <?php echo $per_page == 20 ? 'selected' : ''; ?>>20</option>
+                                <option value="50" <?php echo $per_page == 50 ? 'selected' : ''; ?>>50</option>
+                                <option value="100" <?php echo $per_page == 100 ? 'selected' : ''; ?>>100</option>
+                                <option value="all" <?php echo $per_page == 'all' ? 'selected' : ''; ?>>सभी</option>
+                            </select>
+                        </div>
+                        
+                        <?php if ($per_page != 'all' && $total_pages > 1): ?>
+                        <nav>
+                            <ul class="pagination pagination-controls mb-0">
+                                <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
+                                    <a class="page-link" href="?page=<?php echo $page - 1; ?>&per_page=<?php echo $per_page; ?>" tabindex="-1">
+                                        <i class="fas fa-chevron-left"></i> पिछला
+                                    </a>
+                                </li>
+                                
+                                <?php 
+                                $start_page = max(1, $page - 2);
+                                $end_page = min($total_pages, $page + 2);
+                                
+                                if ($start_page > 1) {
+                                    echo '<li class="page-item"><a class="page-link" href="?page=1&per_page=' . $per_page . '">1</a></li>';
+                                    if ($start_page > 2) {
+                                        echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
+                                    }
+                                }
+                                
+                                for ($i = $start_page; $i <= $end_page; $i++) {
+                                    echo '<li class="page-item ' . ($i == $page ? 'active' : '') . '">';
+                                    echo '<a class="page-link" href="?page=' . $i . '&per_page=' . $per_page . '">' . $i . '</a>';
+                                    echo '</li>';
+                                }
+                                
+                                if ($end_page < $total_pages) {
+                                    if ($end_page < $total_pages - 1) {
+                                        echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
+                                    }
+                                    echo '<li class="page-item"><a class="page-link" href="?page=' . $total_pages . '&per_page=' . $per_page . '">' . $total_pages . '</a></li>';
+                                }
+                                ?>
+                                
+                                <li class="page-item <?php echo $page >= $total_pages ? 'disabled' : ''; ?>">
+                                    <a class="page-link" href="?page=<?php echo $page + 1; ?>&per_page=<?php echo $per_page; ?>">
+                                        अगला <i class="fas fa-chevron-right"></i>
+                                    </a>
+                                </li>
+                            </ul>
+                        </nav>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         </div>
@@ -585,6 +781,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         </div>
     </div>
 
+    <!-- विद्यालय विवरण मोडल -->
+    <div class="modal fade" id="schoolDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">विद्यालय विवरण</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="schoolDetailContent">
+                    <!-- विवरण यहाँ जावास्क्रिप्ट द्वारा भरा जाएगा -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">बंद करें</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.getElementById('mobileMenuBtn').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('active'));
@@ -598,15 +812,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         uploadArea.addEventListener('dragleave', () => { uploadArea.style.backgroundColor = 'var(--light-color)'; });
         uploadArea.addEventListener('drop', (e) => { e.preventDefault(); uploadArea.style.backgroundColor = 'var(--light-color)'; if (e.data.files.length) { fileInput.files = e.data.files; } });
 
-        // UDISE खोज
-        document.getElementById('searchUdise').addEventListener('keyup', function() {
+        // खोज कार्यक्षमता - विद्यालय का नाम और UDISE कोड दोनों से
+        document.getElementById('searchInput').addEventListener('keyup', function() {
             const value = this.value.toLowerCase();
             const rows = document.querySelectorAll('#schoolTable tbody tr');
             rows.forEach(row => {
                 const udise = row.getAttribute('data-udise');
-                row.style.display = udise.includes(value) ? '' : 'none';
+                const name = row.getAttribute('data-name');
+                row.style.display = (udise.includes(value) || name.includes(value)) ? '' : 'none';
             });
         });
+
+        // प्रति पृष्ठ परिवर्तन फ़ंक्शन
+        function changePerPage(value) {
+            const url = new URL(window.location);
+            url.searchParams.set('per_page', value);
+            url.searchParams.set('page', 1);
+            window.location.href = url.toString();
+        }
 
         // मोडल को रीसेट करें
         document.getElementById('schoolModal').addEventListener('hidden.bs.modal', function () {
@@ -655,8 +878,131 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         function viewDetails(school) {
-            // विस्तृत विवरण देखने के लिए एक नया मोडल या पेज खोला जा सकता है
-            alert('विस्तृत विवरण देखने की कार्यक्षमता यहाँ लागू की जाएगी।');
+            // विद्यालय विवरण मोडल में डेटा भरें
+            const detailContent = document.getElementById('schoolDetailContent');
+            
+            // विवरण HTML बनाएं
+            let detailHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="detail-row">
+                            <div class="detail-label">विद्यालय का नाम:</div>
+                            <div class="detail-value">${school.name}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">UDISE कोड:</div>
+                            <div class="detail-value">${school.udise_code}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">जिला:</div>
+                            <div class="detail-value">${school.district_name}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">प्रखंड:</div>
+                            <div class="detail-value">${school.block_name}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">क्लस्टर नाम:</div>
+                            <div class="detail-value">${school.cluster_name || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">प्रधानाध्यापक:</div>
+                            <div class="detail-value">${school.head_of_school || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">संपर्क नंबर:</div>
+                            <div class="detail-value">${school.head_of_school_number || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">ईमेल:</div>
+                            <div class="detail-value">${school.hos_email || '-'}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="detail-row">
+                            <div class="detail-label">न्यूनतम कक्षा:</div>
+                            <div class="detail-value">${school.school_min_class || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">अधिकतम कक्षा:</div>
+                            <div class="detail-value">${school.school_max_class || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">स्थान प्रकार:</div>
+                            <div class="detail-value">${school.location_type || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">पंचायत:</div>
+                            <div class="detail-value">${school.panchayat_name || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">गांव:</div>
+                            <div class="detail-value">${school.village_name || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">पिनकोड:</div>
+                            <div class="detail-value">${school.pincode || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">प्रबंधन:</div>
+                            <div class="detail-value">${school.management_name || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">विद्यालय श्रेणी:</div>
+                            <div class="detail-value">${school.school_category || '-'}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="detail-row">
+                            <div class="detail-label">अच्छे कमरे:</div>
+                            <div class="detail-value">${school.good_rooms || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">खराब कमरे:</div>
+                            <div class="detail-value">${school.bad_rooms || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">कार्यशील शौचालय:</div>
+                            <div class="detail-value">${school.working_toilets || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">रैंप उपलब्ध:</div>
+                            <div class="detail-value">${school.has_ramp ? 'हाँ' : 'नहीं'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">बिजली उपलब्ध:</div>
+                            <div class="detail-value">${school.has_electricity ? 'हाँ' : 'नहीं'}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="detail-row">
+                            <div class="detail-label">कार्यशील हैंडपंप:</div>
+                            <div class="detail-value">${school.working_handpumps || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">कार्यशील पंखे:</div>
+                            <div class="detail-value">${school.working_fans || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">अच्छी बेंच-डेस्क:</div>
+                            <div class="detail-value">${school.good_bench_desks || '-'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">भूमि रहित:</div>
+                            <div class="detail-value">${school.is_landless ? 'हाँ' : 'नहीं'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">अतिरिक्त भूमि:</div>
+                            <div class="detail-value">${school.has_extra_land ? 'हाँ' : 'नहीं'}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            detailContent.innerHTML = detailHTML;
+            new bootstrap.Modal(document.getElementById('schoolDetailModal')).show();
         }
 
         function downloadData(format) {
