@@ -374,6 +374,11 @@ if (!$enrollment_data) {
             <li class="nav-item">
                 <a class="nav-link" href="attendance.php">
                     <i class="fas fa-calendar-check"></i> उपस्थिति विवरणी
+					 </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="pf_management.php">
+                    <i class="fas fa-file-pdf"></i> पीडीएफ प्रबंधन
                 </a>
             </li>
             <li class="nav-item">
@@ -384,6 +389,16 @@ if (!$enrollment_data) {
             <li class="nav-item">
                 <a class="nav-link" href="salary_complaint.php">
                     <i class="fas fa-exclamation-triangle"></i> वेतन शिकायत
+                </a>
+			</li>
+            <li class="nav-item">
+                <a class="nav-link" href="letters.php">
+                    <i class="fas fa-envelope"></i> पत्र
+                </a>
+			</li>
+            <li class="nav-item">
+                <a class="nav-link" href="notices.php">
+                    <i class="fas fa-bullhorn"></i> नोटिस
                 </a>
             </li>
             <li class="nav-item">

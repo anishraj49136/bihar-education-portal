@@ -247,6 +247,11 @@ checkUserType('school');
             <li class="nav-item">
                 <a class="nav-link" href="attendance.php">
                     <i class="fas fa-calendar-check"></i> उपस्थिति विवरणी
+					</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="pf_management.php">
+                    <i class="fas fa-file-pdf"></i> पीडीएफ प्रबंधन
                 </a>
             </li>
             <li class="nav-item">
@@ -257,6 +262,16 @@ checkUserType('school');
             <li class="nav-item">
                 <a class="nav-link" href="salary_complaint.php">
                     <i class="fas fa-exclamation-triangle"></i> वेतन शिकायत
+                </a>
+			</li>
+            <li class="nav-item">
+                <a class="nav-link" href="letters.php">
+                    <i class="fas fa-envelope"></i> पत्र
+                </a>
+			</li>
+            <li class="nav-item">
+                <a class="nav-link" href="notices.php">
+                    <i class="fas fa-bullhorn"></i> नोटिस
                 </a>
             </li>
             <li class="nav-item">
@@ -325,8 +340,8 @@ checkUserType('school');
         <!-- शिक्षक सूची -->
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">शिक्षक सूची</h5>
-                <a href="teachers.php" class="btn btn-sm btn-light">सभी देखें</a>
+                <h4 class="mb-0">शिक्षक सूची</h4>
+                <a href="teachers.php" class="btn btn-sm btn-danger">सभी शिक्षक का PRAN/UAN संख्या अपडेट करने के लिए यहां क्लिक करें  </a>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -338,7 +353,7 @@ checkUserType('school');
                                 <th>ई-शिक्षकोष ID</th>
                                 <th>मोबाइल नंबर</th>
                                 <th>श्रेणी</th>
-                                <th>कार्रवाई</th>
+                                <th>PRAN/UAN No.</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -350,11 +365,8 @@ checkUserType('school');
                                     <td><?php echo $teacher['eshikshakosh_id']; ?></td>
                                     <td><?php echo $teacher['mobile']; ?></td>
                                     <td><?php echo $teacher['category']; ?></td>
-                                    <td>
-                                        <a href="teacher_attendance.php?id=<?php echo $teacher['id']; ?>" class="btn btn-sm btn-primary">
-                                            <i class="fas fa-calendar-check"></i> उपस्थिति
-                                        </a>
-                                    </td>
+                                    <td><?php echo $teacher['pran_no'] ?: $teacher['uan_no'];?></td>
+                                        
                                 </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>

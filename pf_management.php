@@ -15,9 +15,9 @@ checkUserType('school');
  $school_info = $stmt->fetch(PDO::FETCH_ASSOC);
 
 // वर्तमान महीना और वर्ष
- $current_month = date('F');
- $current_year = date('Y');
- $month_for_db = date('Y-m'); // Format: YYYY-MM
+ $current_month = $_GET['month'] ?? date('F');
+ $current_year = $_GET['year'] ?? date('Y');
+ $month_for_db = $current_year . '-' . date('m', strtotime($current_month)); // Format: YYYY-MM
 
 // जांचें कि वर्तमान महीना लॉक है या नहीं
  $stmt = $conn->prepare("SELECT is_locked FROM attendance 
@@ -32,7 +32,7 @@ checkUserType('school');
  $stmt->execute([$school_udise, $month_for_db]);
 
 if ($stmt->rowCount() == 0) {
-    $lock_error = "वर्तमान महीना अभी लॉक नहीं है। कृपया पहले महीना लॉक करें।";
+    $lock_error = "चयनित महीना अभी लॉक नहीं है। कृपया पहले महीना लॉक करें।";
 } else {
     // सभी जेनरेट किए गए पीएफ प्राप्त करें
     $pf_sql = "SELECT * FROM pf_submissions WHERE school_udise = ? AND month = ?";
@@ -206,16 +206,18 @@ if ($stmt->rowCount() == 0) {
             <li class="nav-item"><a class="nav-link" href="enrollment.php"><i class="fas fa-user-graduate"></i> नामांकन</a></li>
             <li class="nav-item"><a class="nav-link" href="teachers.php"><i class="fas fa-chalkboard-teacher"></i> शिक्षक विवरण</a></li>
             <li class="nav-item"><a class="nav-link" href="attendance.php"><i class="fas fa-calendar-check"></i> उपस्थिति विवरणी</a></li>
-            <li class="nav-item"><a class="nav-link active" href="pf_management.php"><i class="fas fa-file-pdf"></i> पीएफ प्रबंधन</a></li>
+            <li class="nav-item"><a class="nav-link active" href="pf_management.php"><i class="fas fa-file-pdf"></i> पीडीएफ प्रबंधन</a></li>
             <li class="nav-item"><a class="nav-link" href="salary_status.php"><i class="fas fa-money-check-alt"></i> वेतन स्थिति</a></li>
             <li class="nav-item"><a class="nav-link" href="salary_complaint.php"><i class="fas fa-exclamation-triangle"></i> वेतन शिकायत</a></li>
+            <li class="nav-item"><a class="nav-link" href="letters.php"><i class="fas fa-envelope"></i> पत्र</a></li>
+            <li class="nav-item"><a class="nav-link" href="notices.php"><i class="fas fa-bullhorn"></i> नोटिस</a></li>
             <li class="nav-item"><a class="nav-link" href="logout.php"><i class="fas fa-sign-out-alt"></i> लॉग आउट</a></li>
         </ul>
     </div>
     <div class="main-content">
         <nav class="navbar navbar-expand-lg navbar-light mb-4">
             <div class="container-fluid">
-                <h4 class="mb-0">पीएफ प्रबंधन - <?php echo date('F Y', strtotime($month_for_db.'-01')); ?></h4>
+                <h4 class="mb-0">पीएफ प्रबंधन - <?php echo $current_month . ' ' . $current_year; ?></h4>
                 <div class="d-flex align-items-center">
                     <div class="user-avatar me-2"><?php echo strtoupper(substr($_SESSION['name'], 0, 2)); ?></div>
                     <div>
@@ -225,6 +227,34 @@ if ($stmt->rowCount() == 0) {
                 </div>
             </div>
         </nav>
+        
+        <!-- महीना चयन कार्ड -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">महीना चुनें</h5>
+            </div>
+            <div class="card-body">
+                <form method="get" action="">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="month" class="form-label">महीना</label>
+                            <select class="form-select" id="month" name="month">
+                                <?php $months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']; foreach($months as $month): ?>
+                                <option value="<?php echo $month; ?>" <?php echo ($current_month === $month) ? 'selected' : ''; ?>><?php echo $month; ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="year" class="form-label">वर्ष</label>
+                            <input type="number" class="form-control" id="year" name="year" value="<?php echo $current_year; ?>" min="2020" max="<?php echo date('Y'); ?>">
+                        </div>
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> खोजें</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
         
         <div class="alert alert-info">
             <strong>माह:</strong> <?php echo $current_month . ' ' . $current_year; ?> | 

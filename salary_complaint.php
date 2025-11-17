@@ -6,22 +6,44 @@ checkUserType('school');
 
  $school_id = $_SESSION['school_id'];
 
+// टिकट नंबर जेनरेट करने का फंक्शन
+function generateTicketNumber() {
+    // वर्तमान तिथि और समय के साथ यूनीक टिकट नंबर बनाएं
+    $prefix = "SC";
+    $date = date('Ymd');
+    $time = date('His');
+    $random = mt_rand(100, 999);
+    
+    return $prefix . $date . $time . $random;
+}
+
 // शिकायत दर्ज करने की प्रक्रिया
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'file_complaint') {
     try {
         $ticket_number = generateTicketNumber();
         $file_path = null;
         
-        // फ़ाइल अपलोड करें यदि मौजूद है
+        // फाइल अपलोड करें यदि मौजूद है
         if (isset($_FILES['bill_file']) && $_FILES['bill_file']['error'] === UPLOAD_ERR_OK) {
             $file_path = uploadFile($_FILES['bill_file'], 'complaints');
         }
         
+        // शिक्षक का PRAN/UAN नंबर से शिक्षक की जानकारी प्राप्त करें
+        $teacher_pran_uan = $_POST['teacher_pran_uan'];
+        $teacher_info = null;
+        
+        if (!empty($teacher_pran_uan)) {
+            $stmt = $conn->prepare("SELECT id, name FROM teachers WHERE (pran_no = ? OR uan_no = ?) AND school_id = ?");
+            $stmt->execute([$teacher_pran_uan, $teacher_pran_uan, $school_id]);
+            $teacher_info = $stmt->fetch(PDO::FETCH_ASSOC);
+        }
+        
+        // शिकायत दर्ज करें (teacher_id के बिना)
         $stmt = $conn->prepare("INSERT INTO salary_complaints (ticket_number, school_id, teacher_pran_uan, salary_type, description, file_path) VALUES (?, ?, ?, ?, ?, ?)");
         $stmt->execute([
             $ticket_number,
             $school_id,
-            $_POST['teacher_pran_uan'],
+            $teacher_pran_uan,
             $_POST['salary_type'],
             $_POST['description'],
             $file_path
@@ -34,6 +56,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     header('Location: salary_complaint.php');
     exit;
 }
+
+// विद्यालय के शिक्षकों की सूची प्राप्त करें (ड्रॉपडाउन के लिए)
+ $stmt = $conn->prepare("SELECT id, name, pran_no, uan_no FROM teachers WHERE school_id = ? ORDER BY name");
+ $stmt->execute([$school_id]);
+ $teachers_list = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // इस विद्यालय की शिकायतें प्राप्त करें
  $stmt = $conn->prepare("SELECT sc.*, t.name as teacher_name FROM salary_complaints sc LEFT JOIN teachers t ON sc.teacher_pran_uan = t.pran_no OR sc.teacher_pran_uan = t.uan_no WHERE sc.school_id = ? ORDER BY sc.created_at DESC");
@@ -70,7 +97,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         .form-control, .form-select { border-radius: 10px; border: 1px solid #ddd; }
         .form-control:focus, .form-select:focus { border-color: var(--primary-color); box-shadow: 0 0 0 0.25rem rgba(106, 27, 154, 0.25); }
         .status-badge { font-size: 0.8em; padding: 4px 8px; border-radius: 12px; }
-        @media (max-width: 992px) { .sidebar { transform: translateX(-100%); } .sidebar.active { transform: translateX(0); } .main-content { margin-left: 0; } .mobile-menu-btn { display: flex; align-items: center; justify-content: center; } }
+        .teacher-select { position: relative; }
+        .teacher-suggestions { position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 0 0 10px 10px; max-height: 200px; overflow-y: auto; z-index: 1000; display: none; }
+        .teacher-suggestion { padding: 10px; cursor: pointer; border-bottom: 1px solid #eee; }
+        .teacher-suggestion:hover { background-color: #f8f9fa; }
+        .teacher-suggestion:last-child { border-bottom: none; }
+        .teacher-suggestion strong { color: var(--primary-color); }
+        /* मोबाइल रेस्पॉन्सिव स्टाइल */
+        @media (max-width: 992px) { 
+            .sidebar { transform: translateX(-100%); } 
+            .sidebar.active { transform: translateX(0); } 
+            .main-content { margin-left: 0; } 
+            .mobile-menu-btn { display: flex; align-items: center; justify-content: center; } 
+        }
     </style>
 </head>
 <body>
@@ -78,23 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     <button class="mobile-menu-btn" id="mobileMenuBtn"><i class="fas fa-bars"></i></button>
     
     <!-- साइडबार -->
-    <div class="sidebar" id="sidebar">
-        <div class="p-4 text-center">
-            <h4>बिहार शिक्षा विभाग</h4>
-            <p class="mb-0">विद्यालय डैशबोर्ड</p>
-        </div>
-        <hr class="text-white">
-        <ul class="nav flex-column">
-            <li class="nav-item"><a class="nav-link" href="school_dashboard.php"><i class="fas fa-tachometer-alt"></i> डैशबोर्ड</a></li>
-            <li class="nav-item"><a class="nav-link" href="school_profile.php"><i class="fas fa-school"></i> विद्यालय प्रोफाइल</a></li>
-            <li class="nav-item"><a class="nav-link" href="enrollment.php"><i class="fas fa-user-graduate"></i> नामांकन</a></li>
-            <li class="nav-item"><a class="nav-link" href="teachers.php"><i class="fas fa-chalkboard-teacher"></i> शिक्षक विवरण</a></li>
-            <li class="nav-item"><a class="nav-link" href="attendance.php"><i class="fas fa-calendar-check"></i> उपस्थिति विवरणी</a></li>
-            <li class="nav-item"><a class="nav-link" href="salary_status.php"><i class="fas fa-money-check-alt"></i> वेतन स्थिति</a></li>
-            <li class="nav-item"><a class="nav-link active" href="salary_complaint.php"><i class="fas fa-exclamation-triangle"></i> वेतन शिकायत</a></li>
-            <li class="nav-item"><a class="nav-link" href="logout.php"><i class="fas fa-sign-out-alt"></i> लॉग आउट</a></li>
-        </ul>
-    </div>
+    <?php include 'sidebar_template.php'; ?>
     
     <!-- मुख्य सामग्री -->
     <div class="main-content">
@@ -131,12 +154,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="teacher_pran_uan" class="form-label">शिक्षक का PRAN/UAN नंबर</label>
-                            <input type="text" class="form-control" id="teacher_pran_uan" name="teacher_pran_uan" required>
+                            <div class="teacher-select">
+                                <input type="text" class="form-control" id="teacher_pran_uan" name="teacher_pran_uan" required autocomplete="off">
+                                <div class="teacher-suggestions" id="teacherSuggestions"></div>
+                            </div>
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="salary_type" class="form-label">वेतन प्रकार</label>
                             <select class="form-select" id="salary_type" name="salary_type" required>
-                                <option value="regular_salary">रेगुलर सैलरी</option>
+                                <option value="regular_salary">नियमित वेतन</option>
                                 <option value="pending_salary">बकाया वेतन</option>
                             </select>
                         </div>
@@ -147,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     </div>
                     <div class="mb-3">
                         <label for="bill_file" class="form-label">बिल / आवेदन (PDF में)</label>
-                        <input type="file" class="form-control" id="bill_file" name="bill_file" accept=".pdf">
+                        <input type="file" class="form-control" id="bill_file" name="bill_file" accept=".pdf" required>
                     </div>
                     <div class="d-grid">
                         <button type="submit" class="btn btn-primary">
@@ -173,6 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 <th>वेतन प्रकार</th>
                                 <th>विवरण</th>
                                 <th>दर्ज करने की तिथि</th>
+								<th>Reject reason</th>
                                 <th>स्थिति</th>
                             </tr>
                         </thead>
@@ -185,14 +212,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     <td><?php echo ($complaint['salary_type'] === 'regular_salary') ? 'नियमित वेतन' : 'बकाया वेतन'; ?></td>
                                     <td><?php echo substr($complaint['description'], 0, 50) . '...'; ?></td>
                                     <td><?php echo date('d M Y', strtotime($complaint['created_at'])); ?></td>
+									<td><?php echo $complaint['rejection_reason']; ?></td>
                                     <td>
                                         <?php
                                         $status_class = 'bg-secondary';
-                                        if ($complaint['status'] === 'in_process') $status_class = 'bg-info';
-                                        elseif ($complaint['status'] === 'done') $status_class = 'bg-success';
-                                        elseif ($complaint['status'] === 'rejected') $status_class = 'bg-danger';
+                                        $status_text = 'लंबित';
+                                        if ($complaint['status'] === 'in_process') { 
+                                            $status_class = 'bg-info'; 
+                                            $status_text = 'प्रक्रियाधीन'; 
+                                        } elseif ($complaint['status'] === 'done') { 
+                                            $status_class = 'bg-success'; 
+                                            $status_text = 'पूर्ण'; 
+                                        } elseif ($complaint['status'] === 'rejected') { 
+                                            $status_class = 'bg-danger'; 
+                                            $status_text = 'अस्वीकृत'; 
+                                        }
                                         ?>
-                                        <span class="badge <?php echo $status_class; ?> status-badge"><?php echo ucfirst(str_replace('_', ' ', $complaint['status'])); ?></span>
+                                        <span class="badge <?php echo $status_class; ?> status-badge"><?php echo $status_text; ?></span>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
@@ -208,7 +244,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        document.getElementById('mobileMenuBtn').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('active'));
+        // मोबाइल मेन्यू टॉगल
+        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
+            document.getElementById('sidebar').classList.toggle('active');
+        });
+        
+        // विंडो आकार बदलने पर साइडबार की जांच करें
+        window.addEventListener('resize', function() {
+            if (window.innerWidth > 992) {
+                document.getElementById('sidebar').classList.remove('active');
+            }
+        });
+        
+        // शिक्षक खोजने की कार्यक्षमता
+        const teacherInput = document.getElementById('teacher_pran_uan');
+        const suggestionsContainer = document.getElementById('teacherSuggestions');
+        
+        // शिक्षकों की सूची
+        const teachers = <?php echo json_encode($teachers_list); ?>;
+        
+        teacherInput.addEventListener('input', function() {
+            const value = this.value.toLowerCase();
+            suggestionsContainer.innerHTML = '';
+            
+            if (value.length > 0) {
+                const filteredTeachers = teachers.filter(teacher => 
+                    teacher.name.toLowerCase().includes(value) || 
+                    (teacher.pran_no && teacher.pran_no.toLowerCase().includes(value)) || 
+                    (teacher.uan_no && teacher.uan_no.toLowerCase().includes(value))
+                );
+                
+                if (filteredTeachers.length > 0) {
+                    suggestionsContainer.style.display = 'block';
+                    filteredTeachers.forEach(teacher => {
+                        const suggestion = document.createElement('div');
+                        suggestion.className = 'teacher-suggestion';
+                        
+                        const pranUan = teacher.pran_no || teacher.uan_no || '';
+                        suggestion.innerHTML = `<strong>${teacher.name}</strong> (${pranUan})`;
+                        
+                        suggestion.addEventListener('click', function() {
+                            teacherInput.value = pranUan;
+                            suggestionsContainer.style.display = 'none';
+                        });
+                        
+                        suggestionsContainer.appendChild(suggestion);
+                    });
+                } else {
+                    suggestionsContainer.style.display = 'none';
+                }
+            } else {
+                suggestionsContainer.style.display = 'none';
+            }
+        });
+        
+        // इनपुट बाहर क्लिक करने पर सुझावने छिपाएं
+        document.addEventListener('click', function(e) {
+            if (!teacherInput.contains(e.target) && !suggestionsContainer.contains(e.target)) {
+                suggestionsContainer.style.display = 'none';
+            }
+        });
     </script>
 </body>
 </html>

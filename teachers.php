@@ -71,9 +71,9 @@ if (isset($_GET['export']) && $_GET['export'] == 'csv') {
 }
 
 // शिक्षक श्रेणियां प्राप्त करें
- $stmt = $conn->prepare("SELECT * FROM teacher_categories ORDER BY name");
+ $stmt = $conn->prepare("SELECT * FROM pf_forwarding_rules ORDER BY category");
  $stmt->execute();
- $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
+ $pf_forwarding_rules = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // ब्लॉक और जिला जानकारी प्राप्त करें (जरूरत के अनुसार)
  $blocks = [];
@@ -139,8 +139,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             if ($can_add) {
-                $stmt = $conn->prepare("INSERT INTO teachers (eshikshakosh_id, name, type, class, aadhar, mobile, pran_no, uan_no, category, school_id) 
-                                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt = $conn->prepare("INSERT INTO teachers (eshikshakosh_id, name, type, class, aadhar, mobile, pran_no, uan_no, category, category_id, school_id) 
+                                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $stmt->execute([
                     $_POST['eshikshakosh_id'],
                     $_POST['name'],
@@ -151,6 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_POST['pran_no'],
                     $_POST['uan_no'],
                     $_POST['category'],
+                    $_POST['category_id'], // pf_forwarding_rules से id
                     $target_school_id
                 ]);
                 $success_message = "शिक्षक सफलतापूर्वक जोड़ा गया!";
@@ -173,12 +174,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $can_edit = false;
             if ($user_type === 'admin') {
                 $can_edit = true;
-            } elseif ($user_type === 'dpo' || $user_type === 'deo') {
-                // जांचें कि शिक्षक उपयोगकर्ता के जिले में है
-                if ($teacher_info['district_id'] == $district_id) $can_edit = true;
-            } elseif ($user_type === 'beo') {
-                // जांचें कि शिक्षक उपयोगकर्ता के ब्लॉक में है
-                if ($teacher_info['block_id'] == $block_id) $can_edit = true;
             } elseif ($user_type === 'school') {
                 // जांचें कि शिक्षक उपयोगकर्ता के स्कूल में है
                 if ($teacher_info['school_id'] == $school_id) $can_edit = true;
@@ -191,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // अपडेट करें
                 $stmt = $conn->prepare("UPDATE teachers SET 
                                        eshikshakosh_id = ?, name = ?, type = ?, class = ?, 
-                                       aadhar = ?, mobile = ?, pran_no = ?, uan_no = ?, category = ? 
+                                       aadhar = ?, mobile = ?, pran_no = ?, uan_no = ?, category = ?, category_id = ?
                                        WHERE id = ?");
                 $stmt->execute([
                     $_POST['eshikshakosh_id'],
@@ -203,6 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_POST['pran_no'],
                     $_POST['uan_no'],
                     $_POST['category'],
+                    $_POST['category_id'], // pf_forwarding_rules से id
                     $teacher_id
                 ]);
                 
@@ -254,8 +250,8 @@ if ($user_type === 'admin') {
             }
         }
     }
-} elseif ($user_type === 'dpo' || $user_type === 'deo') {
-    // DPO और DEO अपने जिले के शिक्षक देख सकते हैं
+} elseif (in_array($user_type, ['district_staff', 'district_program_officer', 'district_education_officer'])) {
+    // जिला स्तरीय अधिकारी अपने जिले के शिक्षक देख सकते हैं
     $where_clause = " AND b.district_id = ?";
     $params[] = $district_id;
     
@@ -267,6 +263,15 @@ if ($user_type === 'admin') {
             $where_clause .= " AND t.school_id = ?";
             $params[] = $_GET['school_id'];
         }
+    }
+} elseif (in_array($user_type, ['ddo', 'block_officer'])) {
+    // ब्लॉक स्तरीय अधिकारी अपने ब्लॉक के शिक्षक देख सकते हैं
+    $where_clause = " AND s.block_id = ?";
+    $params[] = $block_id;
+    
+    if (isset($_GET['school_id']) && !empty($_GET['school_id'])) {
+        $where_clause .= " AND t.school_id = ?";
+        $params[] = $_GET['school_id'];
     }
 } elseif ($user_type === 'beo') {
     // BEO अपने ब्लॉक के शिक्षक देख सकता है
@@ -281,6 +286,16 @@ if ($user_type === 'admin') {
     // स्कूल उपयोगकर्ता केवल अपने स्कूल के शिक्षक देख सकता है
     $where_clause = " AND t.school_id = ?";
     $params[] = $school_id;
+}
+
+// खोज फ़िल्टर लागू करें (स्कूल यूज़र को छोड़कर)
+if ($user_type !== 'school' && isset($_GET['search']) && !empty($_GET['search'])) {
+    $search_term = '%' . $_GET['search'] . '%';
+    $where_clause .= " AND (t.name LIKE ? OR t.mobile LIKE ? OR t.pran_no LIKE ? OR s.name LIKE ?)";
+    $params[] = $search_term;
+    $params[] = $search_term;
+    $params[] = $search_term;
+    $params[] = $search_term;
 }
 
 // कुल रिकॉर्ड्स की गिनती करें
@@ -503,6 +518,24 @@ if ($per_page > 0) {
             display: none;
         }
         
+        .search-box {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        
+        .search-box input {
+            padding-left: 40px;
+            border-radius: 50px;
+        }
+        
+        .search-box i {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+        }
+        
         @media (max-width: 992px) {
             .sidebar {
                 transform: translateX(-100%);
@@ -536,122 +569,7 @@ if ($per_page > 0) {
     </button>
     
     <!-- साइडबार -->
-    <div class="sidebar" id="sidebar">
-        <div class="p-4 text-center">
-            <h4>बिहार शिक्षा विभाग</h4>
-            <p class="mb-0"><?php echo ucfirst($user_type); ?> डैशबोर्ड</p>
-        </div>
-        
-        <hr class="text-white">
-        
-        <ul class="nav flex-column">
-            <?php if ($user_type === 'admin'): ?>
-            <li class="nav-item">
-                <a class="nav-link" href="admin_dashboard.php">
-                    <i class="fas fa-tachometer-alt"></i> डैशबोर्ड
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="districts.php">
-                    <i class="fas fa-map-marked-alt"></i> जिले
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="blocks.php">
-                    <i class="fas fa-map"></i> ब्लॉक
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="schools.php">
-                    <i class="fas fa-school"></i> विद्यालय
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link active" href="teachers.php">
-                    <i class="fas fa-chalkboard-teacher"></i> शिक्षक विवरण
-                </a>
-            </li>
-            <?php elseif ($user_type === 'dpo' || $user_type === 'deo'): ?>
-            <li class="nav-item">
-                <a class="nav-link" href="<?php echo $user_type; ?>_dashboard.php">
-                    <i class="fas fa-tachometer-alt"></i> डैशबोर्ड
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="blocks.php">
-                    <i class="fas fa-map"></i> ब्लॉक
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="schools.php">
-                    <i class="fas fa-school"></i> विद्यालय
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link active" href="teachers.php">
-                    <i class="fas fa-chalkboard-teacher"></i> शिक्षक विवरण
-                </a>
-            </li>
-            <?php elseif ($user_type === 'beo'): ?>
-            <li class="nav-item">
-                <a class="nav-link" href="beo_dashboard.php">
-                    <i class="fas fa-tachometer-alt"></i> डैशबोर्ड
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="schools.php">
-                    <i class="fas fa-school"></i> विद्यालय
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link active" href="teachers.php">
-                    <i class="fas fa-chalkboard-teacher"></i> शिक्षक विवरण
-                </a>
-            </li>
-            <?php elseif ($user_type === 'school'): ?>
-            <li class="nav-item">
-                <a class="nav-link" href="school_dashboard.php">
-                    <i class="fas fa-tachometer-alt"></i> डैशबोर्ड
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="school_profile.php">
-                    <i class="fas fa-school"></i> विद्यालय प्रोफाइल
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="enrollment.php">
-                    <i class="fas fa-user-graduate"></i> नामांकन
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link active" href="teachers.php">
-                    <i class="fas fa-chalkboard-teacher"></i> शिक्षक विवरण
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="attendance.php">
-                    <i class="fas fa-calendar-check"></i> उपस्थिति विवरणी
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="salary_status.php">
-                    <i class="fas fa-money-check-alt"></i> वेतन स्थिति
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="salary_complaint.php">
-                    <i class="fas fa-exclamation-triangle"></i> वेतन शिकायत
-                </a>
-            </li>
-            <?php endif; ?>
-            <li class="nav-item">
-                <a class="nav-link" href="logout.php">
-                    <i class="fas fa-sign-out-alt"></i> लॉग आउट
-                </a>
-            </li>
-        </ul>
-    </div>
+    <?php include 'sidebar_template.php'; ?>
     
     <!-- मुख्य सामग्री -->
     <div class="main-content">
@@ -683,6 +601,22 @@ if ($per_page > 0) {
         <div class="alert alert-danger alert-dismissible fade show" role="alert">
             <?php echo $error_message; ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        <?php endif; ?>
+        
+        <!-- खोज बॉक्स - स्कूल यूज़र को छोड़कर सभी के लिए -->
+        <?php if ($user_type !== 'school'): ?>
+        <div class="card">
+            <div class="card-body">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <form method="get" action="" class="d-flex">
+                        <input type="text" class="form-control me-2" name="search" placeholder="शिक्षक नाम, मोबाइल नंबर, PRAN नंबर, या विद्यालय का नाम खोजें..." value="<?php echo isset($_GET['search']) ? htmlspecialchars($_GET['search']) : ''; ?>">
+                        <button type="submit" class="btn btn-primary">खोजें</button>
+                        <a href="teachers.php" class="btn btn-secondary ms-2">रीसेट</a>
+                    </form>
+                </div>
+            </div>
         </div>
         <?php endif; ?>
         
@@ -781,7 +715,7 @@ if ($per_page > 0) {
                                 <th>मोबाइल नंबर</th>
                                 <th>PRAN/UAN</th>
                                 <th>श्रेणी</th>
-                                <?php if ($user_type === 'admin' || $user_type === 'dpo' || $user_type === 'deo' || $user_type === 'beo' || $user_type === 'school'): ?>
+                                <?php if ($user_type === 'admin' || $user_type === 'school'): ?>
                                 <th>कार्रवाई</th>
                                 <?php endif; ?>
                             </tr>
@@ -803,9 +737,8 @@ if ($per_page > 0) {
                                     <td><?php echo $teacher['mobile']; ?></td>
                                     <td><?php echo $teacher['pran_no'] ?: $teacher['uan_no']; ?></td>
                                     <td><?php echo $teacher['category']; ?></td>
-                                    <?php if ($user_type === 'admin' || $user_type === 'dpo' || $user_type === 'deo' || $user_type === 'beo' || $user_type === 'school'): ?>
+                                    <?php if ($user_type === 'admin' || $user_type === 'school'): ?>
                                     <td>
-                                        <?php if ($user_type === 'admin' || $user_type === 'dpo' || $user_type === 'deo' || $user_type === 'beo' || $user_type === 'school'): ?>
                                         <button type="button" class="btn btn-sm btn-primary edit-teacher" 
                                                 data-id="<?php echo $teacher['id']; ?>"
                                                 data-eshikshakosh-id="<?php echo $teacher['eshikshakosh_id']; ?>"
@@ -817,13 +750,13 @@ if ($per_page > 0) {
                                                 data-pran-no="<?php echo $teacher['pran_no']; ?>"
                                                 data-uan-no="<?php echo $teacher['uan_no']; ?>"
                                                 data-category="<?php echo $teacher['category']; ?>"
+                                                data-category-id="<?php echo $teacher['category_id']; ?>"
                                                 data-school-id="<?php echo $teacher['school_id']; ?>"
                                                 data-district-id="<?php echo $teacher['district_id']; ?>"
                                                 data-block-id="<?php echo $teacher['block_id']; ?>"
                                                 data-school-name="<?php echo $teacher['school_name']; ?>">
                                             <i class="fas fa-edit"></i>
                                         </button>
-                                        <?php endif; ?>
                                         
                                         <?php if ($user_type === 'admin'): ?>
                                         <form method="post" style="display: inline-block;">
@@ -859,7 +792,7 @@ if ($per_page > 0) {
                     
                     <div class="per-page-selector">
                         <label for="per_page" class="form-label mb-0">प्रति पृष्ठ:</label>
-                        <select class="form-select form-select-sm" id="per_page" name="per_page" style="width: auto;">
+                        <select class="form-select form-select-sm" id="per_page" name="per_page" style="width: auto;" onchange="changePerPage(this.value)">
                             <option value="20" <?php echo ($per_page == 20) ? 'selected' : ''; ?>>20</option>
                             <option value="50" <?php echo ($per_page == 50) ? 'selected' : ''; ?>>50</option>
                             <option value="100" <?php echo ($per_page == 100) ? 'selected' : ''; ?>>100</option>
@@ -871,19 +804,19 @@ if ($per_page > 0) {
                         <ul class="pagination mb-0">
                             <?php if ($page > 1): ?>
                             <li class="page-item">
-                                <a class="page-link" href="?page=<?php echo $page - 1; ?>&per_page=<?php echo $per_page; ?><?php echo isset($_GET['district_id']) ? '&district_id=' . $_GET['district_id'] : ''; ?><?php echo isset($_GET['block_id']) ? '&block_id=' . $_GET['block_id'] : ''; ?><?php echo isset($_GET['school_id']) ? '&school_id=' . $_GET['school_id'] : ''; ?>">पिछला</a>
+                                <a class="page-link" href="?page=<?php echo $page - 1; ?>&per_page=<?php echo $per_page; ?><?php echo isset($_GET['district_id']) ? '&district_id=' . $_GET['district_id'] : ''; ?><?php echo isset($_GET['block_id']) ? '&block_id=' . $_GET['block_id'] : ''; ?><?php echo isset($_GET['school_id']) ? '&school_id=' . $_GET['school_id'] : ''; ?><?php echo isset($_GET['search']) ? '&search=' . urlencode($_GET['search']) : ''; ?>">पिछला</a>
                             </li>
                             <?php endif; ?>
                             
                             <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
                             <li class="page-item <?php echo ($i == $page) ? 'active' : ''; ?>">
-                                <a class="page-link" href="?page=<?php echo $i; ?>&per_page=<?php echo $per_page; ?><?php echo isset($_GET['district_id']) ? '&district_id=' . $_GET['district_id'] : ''; ?><?php echo isset($_GET['block_id']) ? '&block_id=' . $_GET['block_id'] : ''; ?><?php echo isset($_GET['school_id']) ? '&school_id=' . $_GET['school_id'] : ''; ?>"><?php echo $i; ?></a>
+                                <a class="page-link" href="?page=<?php echo $i; ?>&per_page=<?php echo $per_page; ?><?php echo isset($_GET['district_id']) ? '&district_id=' . $_GET['district_id'] : ''; ?><?php echo isset($_GET['block_id']) ? '&block_id=' . $_GET['block_id'] : ''; ?><?php echo isset($_GET['school_id']) ? '&school_id=' . $_GET['school_id'] : ''; ?><?php echo isset($_GET['search']) ? '&search=' . urlencode($_GET['search']) : ''; ?>"><?php echo $i; ?></a>
                             </li>
                             <?php endfor; ?>
                             
                             <?php if ($page < $total_pages): ?>
                             <li class="page-item">
-                                <a class="page-link" href="?page=<?php echo $page + 1; ?>&per_page=<?php echo $per_page; ?><?php echo isset($_GET['district_id']) ? '&district_id=' . $_GET['district_id'] : ''; ?><?php echo isset($_GET['block_id']) ? '&block_id=' . $_GET['block_id'] : ''; ?><?php echo isset($_GET['school_id']) ? '&school_id=' . $_GET['school_id'] : ''; ?>">अगला</a>
+                                <a class="page-link" href="?page=<?php echo $page + 1; ?>&per_page=<?php echo $per_page; ?><?php echo isset($_GET['district_id']) ? '&district_id=' . $_GET['district_id'] : ''; ?><?php echo isset($_GET['block_id']) ? '&block_id=' . $_GET['block_id'] : ''; ?><?php echo isset($_GET['school_id']) ? '&school_id=' . $_GET['school_id'] : ''; ?><?php echo isset($_GET['search']) ? '&search=' . urlencode($_GET['search']) : ''; ?>">अगला</a>
                             </li>
                             <?php endif; ?>
                         </ul>
@@ -905,6 +838,7 @@ if ($per_page > 0) {
                     <div class="modal-body">
                         <input type="hidden" name="action" id="formAction" value="add">
                         <input type="hidden" name="teacher_id" id="teacherId">
+                        <input type="hidden" name="category_id" id="categoryId">
                         
                         <?php if ($user_type === 'admin' || $user_type === 'dpo' || $user_type === 'deo' || $user_type === 'beo'): ?>
                         <div class="row">
@@ -977,12 +911,12 @@ if ($per_page > 0) {
                                 <label for="class" class="form-label">शिक्षक की कक्षा</label>
                                 <select class="form-select" id="class" name="class" required onchange="checkClassSelection()">
                                     <option value="" selected disabled>चुनें</option>
-                                    <option value="(11-12)">11-12</option>
-                                    <option value="(1-5)">1-5</option>
-                                    <option value="(1-8)">1-8</option>
-                                    <option value="(6-8)">6-8</option>
-                                    <option value="(9-10)">9-10</option>
-                                    <option value="(9-12)">9-12</option>
+                                    <option value="11-12">11-12</option>
+                                    <option value="1-5">1-5</option>
+                                    <option value="1-8">1-8</option>
+                                    <option value="6-8">6-8</option>
+                                    <option value="9-10">9-10</option>
+                                    <option value="9-12">9-12</option>
                                 </select>
                                 <div class="warning-box" id="classWarning">
                                     <strong>चेतावनी:</strong> यह कक्षा केवल UHS Head Master के लिए है। यदि आप UHS Head Master हैं, तो ही आगे बढ़ें।
@@ -1007,17 +941,17 @@ if ($per_page > 0) {
                                 <input type="text" class="form-control" id="pran_no" name="pran_no">
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="uan_no" class="form-label">UAN नंबर</label>
+                                <label for="uan_no" class="form-label">UAN नंबर(अगर शिक्षक का प्रकार नियोजित शिक्षक है तो UAN संख्या दर्ज करें)</label>
                                 <input type="text" class="form-control" id="uan_no" name="uan_no">
                             </div>
                         </div>
                         
                         <div class="mb-3">
                             <label for="category" class="form-label">शिक्षक श्रेणी</label>
-                            <select class="form-select" id="category" name="category" required>
+                            <select class="form-select" id="category" name="category" required onchange="updateCategoryId()">
                                 <option value="" selected disabled>चुनें</option>
-                                <?php foreach ($categories as $category): ?>
-                                <option value="<?php echo $category['name']; ?>"><?php echo $category['name']; ?></option>
+                                <?php foreach ($pf_forwarding_rules as $category): ?>
+                                <option value="<?php echo $category['category']; ?>" data-id="<?php echo $category['id']; ?>"><?php echo $category['category']; ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -1045,6 +979,14 @@ if ($per_page > 0) {
             }
         });
         
+        // प्रति पृष्ठ रिकॉर्ड्स बदलने पर पेज रीलोड करें
+        function changePerPage(value) {
+            const url = new URL(window.location);
+            url.searchParams.set('per_page', value);
+            url.searchParams.set('page', 1);
+            window.location.href = url.toString();
+        }
+        
         // शिक्षक संपादित करें
         document.querySelectorAll('.edit-teacher').forEach(button => {
             button.addEventListener('click', function() {
@@ -1060,13 +1002,14 @@ if ($per_page > 0) {
                 document.getElementById('pran_no').value = this.dataset.pranNo;
                 document.getElementById('uan_no').value = this.dataset.uanNo;
                 document.getElementById('category').value = this.dataset.category;
+                document.getElementById('categoryId').value = this.dataset.categoryId;
                 
                 // Set school, district and block values for edit modal
                 if (document.getElementById('school_id')) {
                     // For admin, BEO, DPO, DEO users
                     document.getElementById('school_id').value = this.dataset.schoolId;
                     
-                    // Add school name option if not already in the list
+                    // Add school name option if not already in list
                     const schoolSelect = document.getElementById('school_id');
                     let schoolExists = false;
                     for (let i =0; i < schoolSelect.options.length; i++) {
@@ -1108,6 +1051,7 @@ if ($per_page > 0) {
             document.getElementById('teacherModalTitle').textContent = 'नया शिक्षक जोड़ें';
             document.getElementById('formAction').value = 'add';
             document.getElementById('teacherId').value = '';
+            document.getElementById('categoryId').value = '';
             document.getElementById('classWarning').style.display = 'none';
         });
         
@@ -1223,14 +1167,18 @@ if ($per_page > 0) {
             }
         }
         
-        // प्रति पृष्ठ रिकॉर्ड्स बदलने पर पेज रीलोड करें
-        document.getElementById('per_page').addEventListener('change', function() {
-            const perPage = this.value;
-            const url = new URL(window.location);
-            url.searchParams.set('per_page', perPage);
-            url.searchParams.set('page', 1); // Reset to first page
-            window.location.href = url.toString();
-        });
+        // श्रेणी आईडी अपडेट करें
+        function updateCategoryId() {
+            const categorySelect = document.getElementById('category');
+            const categoryIdField = document.getElementById('categoryId');
+            
+            if (categorySelect.selectedIndex > 0) {
+                const selectedOption = categorySelect.options[categorySelect.selectedIndex];
+                categoryIdField.value = selectedOption.getAttribute('data-id');
+            } else {
+                categoryIdField.value = '';
+            }
+        }
     </script>
 </body>
 </html>

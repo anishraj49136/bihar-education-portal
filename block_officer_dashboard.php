@@ -31,9 +31,9 @@ else {
     }
 }
 
-// अगर अभी भी ब्लॉक आईडी नहीं मिली, तो त्रुटि दिखाएं
+// अगर भी ब्लॉक आईडी नहीं मिली, तो त्रुटि दिखाएं
 if (!$block_id) {
-    $_SESSION['error_message'] = "प्रखंड शिक्षा पदाधिकारी के लिए ब्लॉक ID निर्धारित नहीं है। कृपया लॉगिन करें।";
+    $_SESSION['error_message'] = "प्रखंड शिक्षा अधिकारी के लिए ब्लॉक ID निर्धारित नहीं है। कृपया लॉगिन करें।";
     header("Location: login.php");
     exit;
 }
@@ -43,10 +43,15 @@ if (!$block_id) {
  $stmt->execute([$block_id]);
  $block_info = $stmt->fetch(PDO::FETCH_ASSOC);
 
-// फ़िल्टर मान प्राप्त करें
+// फिल्टर मान प्राप्त करें
  $selected_month = $_GET['month'] ?? date('F');
  $selected_year = $_GET['year'] ?? date('Y');
  $udise_code = $_GET['udise_code'] ?? '';
+
+// पेजिनेशन वेरिएबल्स
+ $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+ $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 20;
+ $offset = ($page - 1) * $per_page;
 
 // जांचें कि attendance टेबल में status कॉलम मौजूद है या नहीं
  $has_status_column = false;
@@ -84,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } catch (PDOException $e) {
         $_SESSION['error_message'] = "त्रुटि: " . $e->getMessage();
     }
-    header("Location: block_officer_dashboard.php?month=$selected_month&year=$selected_year&udise_code=$udise_code");
+    header("Location: block_officer_dashboard.php?month=$selected_month&year=$selected_year&udise_code=$udise_code&page=$page&per_page=$per_page");
     exit;
 }
 
@@ -111,9 +116,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['action_forward']) ||
     } catch (PDOException $e) {
         $_SESSION['error_message'] = "त्रुटि: " . $e->getMessage();
     }
-    header("Location: block_officer_dashboard.php?month=$selected_month&year=$selected_year&udise_code=$udise_code");
+    header("Location: block_officer_dashboard.php?month=$selected_month&year=$selected_year&udise_code=$udise_code&page=$page&per_page=$per_page");
     exit;
 }
+
+// कुल रिकॉर्ड्स की गिनती प्राप्त करें
+ $count_sql = "SELECT COUNT(*) as total
+        FROM teachers t
+        JOIN attendance a ON t.id = a.teacher_id
+        JOIN schools s ON t.school_id = s.id
+        WHERE s.block_id = '$block_id' AND a.month = '$selected_month' AND a.year = '$selected_year'
+        AND (t.class LIKE '%9-10%' OR t.class LIKE '%11-12%')"; // 3. यहाँ कक्षा फिल्टर बदला गया है
+
+if (!empty($udise_code)) {
+    $count_sql .= " AND s.udise_code = '$udise_code'";
+}
+
+ $count_stmt = $conn->prepare($count_sql);
+ $count_stmt->execute();
+ $total_records = $count_stmt->fetch(PDO::FETCH_ASSOC)['total'];
+ $total_pages = ceil($total_records / $per_page);
 
 // उपस्थिति रिकॉर्ड प्राप्त करें
  $sql = "SELECT t.id as teacher_id, t.name, t.mobile, t.pran_no, t.uan_no, t.class, 
@@ -127,17 +149,20 @@ if ($has_status_column) {
         FROM teachers t
         JOIN attendance a ON t.id = a.teacher_id
         JOIN schools s ON t.school_id = s.id
-        WHERE s.block_id = ? AND a.month = ? AND a.year = ?
-        AND (t.class LIKE '%9-10%' OR t.class LIKE '%11-12%')"; // 3. यहाँ कक्षा फ़िल्टर बदला गया है
+        WHERE s.block_id = '$block_id' AND a.month = '$selected_month' AND a.year = '$selected_year'
+        AND (t.class LIKE '%9-10%' OR t.class LIKE '%11-12%')"; // 3. यहाँ कक्षा फिल्टर बदला गया है
 
- $params = [$block_id, $selected_month, $selected_year];
 if (!empty($udise_code)) {
-    $sql .= " AND s.udise_code = ?";
-    $params[] = $udise_code;
+    $sql .= " AND s.udise_code = '$udise_code'";
+}
+
+// पेजिनेशन के लिए LIMIT और OFFSET जोड़ें
+if ($per_page !== 'all') {
+    $sql .= " LIMIT $per_page OFFSET $offset";
 }
 
  $stmt = $conn->prepare($sql);
- $stmt->execute($params);
+ $stmt->execute();
  $attendance_records = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
@@ -147,7 +172,7 @@ if (!empty($udise_code)) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- 2. यहाँ शीर्षक बदला गया है -->
-    <title>प्रखंड शिक्षा पदाधिकारी डैशबोर्ड - बिहार शिक्षा विभाग</title>
+    <title>प्रखंड शिक्षा अधिकारी डैशबोर्ड - बिहार शिक्षा विभाग</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -171,8 +196,34 @@ if (!empty($udise_code)) {
         .form-control, .form-select { border-radius: 10px; border: 1px solid #ddd; }
         .form-control:focus, .form-select:focus { border-color: var(--primary-color); box-shadow: 0 0 0 0.25rem rgba(106, 27, 154, 0.25); }
         .attendance-input { width: 100px; }
-        .status-badge { font-size: 0.8em; padding: 4px 8px; border-radius: 12px; }
-        @media (max-width: 992px) { .sidebar { transform: translateX(-100%); } .sidebar.active { transform: translateX(0); } .main-content { margin-left: 0; } .mobile-menu-btn { display: flex; align-items: center; justify-content: center; } }
+        .status-badge { font-size: 0.8em; padding:4px 8px; border-radius: 12px; }
+        .pagination-container { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
+        .pagination-info { margin-right: 20px; }
+        .page-link { color: var(--primary-color); }
+        .page-item.active .page-link { background-color: var(--primary-color); border-color: var(--primary-color); }
+        /* मोबाइल रेस्पॉन्सिव स्टाइल */
+        @media (max-width: 992px) { 
+            .sidebar { transform: translateX(-100%); } 
+            .sidebar.active { transform: translateX(0); } 
+            .main-content { margin-left: 0; } 
+            .mobile-menu-btn { display: flex; align-items: center; justify-content: center; } 
+            .table-responsive { font-size: 0.85rem; }
+            .attendance-input { width: 80px; }
+        }
+        @media (max-width: 768px) {
+            .card-body { padding: 10px; }
+            .form-control, .form-select { font-size: 0.85rem; }
+            .btn { padding: 6px 12px; font-size: 0.85rem; }
+            .table th, .table td { padding: 5px; }
+            .pagination-container { flex-direction: column; align-items: flex-start; }
+            .pagination-info { margin-bottom: 10px; }
+        }
+        @media (max-width: 576px) {
+            .table-responsive { font-size: 0.75rem; }
+            .attendance-input { width: 70px; }
+            .table th, .table td { padding: 3px; }
+            .user-avatar { width: 30px; height: 30px; font-size: 0.8rem; }
+        }
     </style>
 </head>
 <body>
@@ -180,20 +231,7 @@ if (!empty($udise_code)) {
     <button class="mobile-menu-btn" id="mobileMenuBtn"><i class="fas fa-bars"></i></button>
     
     <!-- साइडबार -->
-    <div class="sidebar" id="sidebar">
-        <div class="p-4 text-center">
-            <h4>बिहार शिक्षा विभाग</h4>
-            <!-- 2. यहाँ भूमिका बदली गई है -->
-            <p class="mb-0">प्रखंड शिक्षा पदाधिकारी डैशबोर्ड</p>
-        </div>
-        <hr class="text-white">
-        <ul class="nav flex-column">
-            <li class="nav-item"><a class="nav-link active" href="block_officer_dashboard.php"><i class="fas fa-tachometer-alt"></i> डैशबोर्ड</a></li>
-            <li class="nav-item"><a class="nav-link" href="letters.php"><i class="fas fa-envelope"></i> पत्र</a></li>
-            <li class="nav-item"><a class="nav-link" href="notices.php"><i class="fas fa-bullhorn"></i> नोटिस</a></li>
-            <li class="nav-item"><a class="nav-link" href="logout.php"><i class="fas fa-sign-out-alt"></i> लॉग आउट</a></li>
-        </ul>
-    </div>
+    <?php include 'sidebar_template.php'; ?>
     
     <!-- मुख्य सामग्री -->
     <div class="main-content">
@@ -201,13 +239,13 @@ if (!empty($udise_code)) {
         <nav class="navbar navbar-expand-lg navbar-light mb-4">
             <div class="container-fluid">
                 <!-- 2. यहाँ शीर्षक बदला गया है -->
-                <h4 class="mb-0">प्रखंड शिक्षा पदाधिकारी डैशबोर्ड</h4>
+                <h4 class="mb-0">प्रखंड शिक्षा अधिकारी डैशबोर्ड</h4>
                 <div class="d-flex align-items-center">
                     <div class="user-avatar me-2"><?php echo strtoupper(substr($_SESSION['name'], 0, 2)); ?></div>
                     <div>
                         <h6 class="mb-0"><?php echo $_SESSION['name']; ?></h6>
                         <!-- 2. यहाँ भूमिका बदली गई है -->
-                        <small class="text-muted">प्रखंड शिक्षा पदाधिकारी, <?php echo $block_info['block_name']; ?></small>
+                        <small class="text-muted">प्रखंड शिक्षा अधिकारी, <?php echo $block_info['block_name']; ?></small>
                     </div>
                 </div>
             </div>
@@ -221,13 +259,13 @@ if (!empty($udise_code)) {
         <div class="alert alert-danger alert-dismissible fade show" role="alert"><?php echo $_SESSION['error_message']; unset($_SESSION['error_message']); ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
         <?php endif; ?>
 
-        <!-- फ़िल्टर कार्ड -->
+        <!-- फिल्टर कार्ड -->
         <div class="card">
             <div class="card-header"><h5 class="mb-0">शिक्षक उपस्थिति विवरणी खोजें</h5></div>
             <div class="card-body">
                 <form method="get" action="">
                     <div class="row g-3">
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label for="month" class="form-label">महीना</label>
                             <select class="form-select" id="month" name="month">
                                 <?php $months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']; foreach($months as $month): ?>
@@ -235,13 +273,23 @@ if (!empty($udise_code)) {
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label for="year" class="form-label">वर्ष</label>
                             <input type="number" class="form-control" id="year" name="year" value="<?php echo $selected_year; ?>">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label for="udise_code" class="form-label">UDISE कोड</label>
                             <input type="text" class="form-control" id="udise_code" name="udise_code" value="<?php echo htmlspecialchars($udise_code); ?>">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="per_page" class="form-label">प्रति पृष्ठ रिकॉर्ड</label>
+                            <select class="form-select" id="per_page" name="per_page">
+                                <option value="20" <?php echo ($per_page === 20) ? 'selected' : ''; ?>>20</option>
+                                <option value="50" <?php echo ($per_page === 50) ? 'selected' : ''; ?>>50</option>
+                                <option value="100" <?php echo ($per_page === 100) ? 'selected' : ''; ?>>100</option>
+                                <option value="500" <?php echo ($per_page === 500) ? 'selected' : ''; ?>>500</option>
+                                <option value="all" <?php echo ($per_page === 'all') ? 'selected' : ''; ?>>सभी</option>
+                            </select>
                         </div>
                         <div class="col-12">
                             <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> खोजें</button>
@@ -271,6 +319,7 @@ if (!empty($udise_code)) {
                         <table class="table table-hover">
                             <thead>
                                 <tr>
+                                    <th>क्रमांक</th>
                                     <?php if ($has_status_column): ?>
                                     <th><input type="checkbox" id="selectAll"></th>
                                     <?php endif; ?>
@@ -288,8 +337,10 @@ if (!empty($udise_code)) {
                             </thead>
                             <tbody>
                                 <?php if (count($attendance_records) > 0): ?>
+                                    <?php $serial_number = ($page - 1) * $per_page + 1; ?>
                                     <?php foreach ($attendance_records as $record): ?>
                                     <tr>
+                                        <td><?php echo $serial_number; ?></td>
                                         <?php if ($has_status_column): ?>
                                         <td><input type="checkbox" name="teacher_ids[]" value="<?php echo $record['teacher_id']; ?>" class="teacher-checkbox"></td>
                                         <?php endif; ?>
@@ -314,13 +365,71 @@ if (!empty($udise_code)) {
                                         </td>
                                         <?php endif; ?>
                                     </tr>
+                                    <?php $serial_number++; ?>
                                     <?php endforeach; ?>
                                 <?php else: ?>
-                                    <tr><td colspan="<?php echo $has_status_column ? '9' : '8'; ?>" class="text-center">कोई रिकॉर्ड नहीं मिला।</td></tr>
+                                    <tr><td colspan="<?php echo $has_status_column ? '10' : '9'; ?>" class="text-center">कोई रिकॉर्ड नहीं मिला।</td></tr>
                                 <?php endif; ?>
                             </tbody>
                         </table>
                     </div>
+                    
+                    <!-- पेजिनेशन -->
+                    <?php if ($total_records > 0): ?>
+                    <div class="pagination-container">
+                        <div class="pagination-info">
+                            <?php 
+                            $start = ($page - 1) * $per_page + 1;
+                            $end = min($page * $per_page, $total_records);
+                            echo "दिखा रहे हैं $start से $end कुल $total_records रिकॉर्ड्स में से";
+                            ?>
+                        </div>
+                        <nav>
+                            <ul class="pagination mb-0">
+                                <?php if ($page > 1): ?>
+                                <li class="page-item">
+                                    <a class="page-link" href="?month=<?php echo $selected_month; ?>&year=<?php echo $selected_year; ?>&udise_code=<?php echo $udise_code; ?>&per_page=<?php echo $per_page; ?>&page=<?php echo $page - 1; ?>" aria-label="Previous">
+                                        <span aria-hidden="true">&laquo;</span>
+                                    </a>
+                                </li>
+                                <?php endif; ?>
+                                
+                                <?php 
+                                $max_visible_pages = 5;
+                                $start_page = max(1, $page - floor($max_visible_pages / 2));
+                                $end_page = min($total_pages, $start_page + $max_visible_pages - 1);
+                                
+                                if ($start_page > 1) {
+                                    echo '<li class="page-item"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&per_page='.$per_page.'&page=1">1</a></li>';
+                                    if ($start_page > 2) {
+                                        echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
+                                    }
+                                }
+                                
+                                for ($i = $start_page; $i <= $end_page; $i++) {
+                                    $active_class = ($i == $page) ? 'active' : '';
+                                    echo '<li class="page-item '.$active_class.'"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&per_page='.$per_page.'&page='.$i.'">'.$i.'</a></li>';
+                                }
+                                
+                                if ($end_page < $total_pages) {
+                                    if ($end_page < $total_pages - 1) {
+                                        echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
+                                    }
+                                    echo '<li class="page-item"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&per_page='.$per_page.'&page='.$total_pages.'">'.$total_pages.'</a></li>';
+                                }
+                                ?>
+                                
+                                <?php if ($page < $total_pages): ?>
+                                <li class="page-item">
+                                    <a class="page-link" href="?month=<?php echo $selected_month; ?>&year=<?php echo $selected_year; ?>&udise_code=<?php echo $udise_code; ?>&per_page=<?php echo $per_page; ?>&page=<?php echo $page + 1; ?>" aria-label="Next">
+                                        <span aria-hidden="true">&raquo;</span>
+                                    </a>
+                                </li>
+                                <?php endif; ?>
+                            </ul>
+                        </nav>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
         </form>
@@ -328,8 +437,20 @@ if (!empty($udise_code)) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        document.getElementById('mobileMenuBtn').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('active'));
+        // मोबाइल मेन्यू टॉगल
+        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
+            document.getElementById('sidebar').classList.toggle('active');
+        });
+        
+        // विंडो आकार बदलने पर साइडबार की जांच करें
+        window.addEventListener('resize', function() {
+            if (window.innerWidth > 992) {
+                document.getElementById('sidebar').classList.remove('active');
+            }
+        });
+        
         <?php if ($has_status_column): ?>
+        // सभी चेकबॉक्स का चयन करें
         document.getElementById('selectAll').addEventListener('change', function() {
             document.querySelectorAll('.teacher-checkbox').forEach(cb => cb.checked = this.checked);
         });

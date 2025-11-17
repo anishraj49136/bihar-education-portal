@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if (isset($_POST['action']) && $_POST['action'] === 'save_user') {
             $user_id = $_POST['user_id'];
-            $password = !empty($_POST['password']) ? securePassword($_POST['password']) : null;
+            $password = !empty($_POST['password']) ? password_hash($_POST['password'], PASSWORD_BCRYPT) : null;
             
             if ($user_id && $password === null) { // अपडेट और पासवर्ड नहीं बदलना
                 $stmt = $conn->prepare("UPDATE users SET username = ?, user_type = ?, name = ?, email = ?, mobile = ?, district_id = ?, block_id = ? WHERE id = ?");
