@@ -1,18 +1,4 @@
 <?php
-// बिना किसी आउटपुट के सबसे पहले सत्र शुरू करें
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
-
-// त्रुटि रिपोर्टिंग सक्षम करें
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
-// सत्र आईडी को लॉग करें
- $log_message = date('Y-m-d H:i:s') . " - district_pf_dashboard.php - Session ID: " . session_id() . "\n";
- $log_message .= "User ID: " . ($_SESSION['user_id'] ?? 'Not set') . "\n";
- $log_message .= "User Type: " . ($_SESSION['user_type'] ?? 'Not set') . "\n";
-file_put_contents('session_debug.log', $log_message, FILE_APPEND);
 
 // कॉन्फिगरेशन फ़ाइल शामिल करें
 require_once 'config.php';
@@ -341,9 +327,6 @@ try {
                                         <?php endif; ?>
                                     </td>
                                     <td>
-                                        <button type="button" class="btn btn-sm btn-primary" onclick="viewPFForm(<?php echo $record['id']; ?>)">
-                                            <i class="fas fa-eye"></i> देखें
-                                        </button>
                                         <button type="button" class="btn btn-sm btn-success" onclick="approvePFForm(<?php echo $record['id']; ?>)">
                                             <i class="fas fa-check"></i> स्वीकृत करें
                                         </button>
