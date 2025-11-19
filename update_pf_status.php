@@ -1,91 +1,103 @@
 <?php
-// कॉन्फिगरेशन फ़ाइल शामिल करें
 require_once 'config.php';
 
-// सत्र शुरू करें
-session_start();
+// सत्र शुरू करें (अगर config.php में नहीं है तो)
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
 
-// जांचें कि उपयोगकर्ता लॉग इन है या नहीं
+// JSON हेडर सेट करें
+header('Content-Type: application/json');
+
+// जवाब array
+ $response = [
+    'success' => false,
+    'message' => ''
+];
+
+// सत्र की जांच करें
 if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['success' => false, 'message' => 'आप लॉग इन नहीं हैं।', 'session_expired' => true]);
+    $response['message'] = 'अनधिकृत पहुंच। कृपया लॉग इन करें।';
+    echo json_encode($response);
     exit;
 }
 
-// जांचें कि क्या अनुरोध POST विधि का है
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['success' => false, 'message' => 'अमान्य अनुरोध विधि।']);
-    exit;
-}
-
-// जिला आईडी प्राप्त करें
- $district_id = $_SESSION['district_id'] ?? null;
-if (!$district_id) {
-    echo json_encode(['success' => false, 'message' => 'जिला आईडी नहीं मिली।']);
-    exit;
-}
-
-// अनुरोध से डेटा प्राप्त करें
+// POST डेटा प्राप्त करें
  $action = $_POST['action'] ?? '';
+ $id = $_POST['id'] ?? '';
  $ids = $_POST['ids'] ?? '';
 
 try {
-    // एकल रिकॉर्ड के लिए
-    if ($action === 'approve_district') {
-        $id = $_POST['id'] ?? 0;
-        $stmt = $conn->prepare("UPDATE pf_submissions SET status = 'approved_by_district', approved_by_district_id = ?, approved_date = NOW() WHERE id = ? AND id IN (SELECT pf.id FROM pf_submissions pf JOIN schools s ON pf.school_udise = s.udise_code JOIN blocks b ON s.block_id = b.id WHERE b.district_id = ?)");
-        $stmt->execute([$_SESSION['user_id'], $id, $district_id]);
-        
-        if ($stmt->rowCount() > 0) {
-            echo json_encode(['success' => true, 'message' => 'पीएफ फॉर्म सफलतापूर्वक स्वीकृत किया गया।']);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'पीएफ फॉर्म अपडेट करने में विफल।']);
-        }
-    } 
-    // एकल रिकॉर्ड को वापस भेजने के लिए
-    elseif ($action === 'send_back_to_block') {
-        $id = $_POST['id'] ?? 0;
-        $stmt = $conn->prepare("UPDATE pf_submissions SET status = 'returned_to_block', returned_by_district_id = ?, returned_date = NOW() WHERE id = ? AND id IN (SELECT pf.id FROM pf_submissions pf JOIN schools s ON pf.school_udise = s.udise_code JOIN blocks b ON s.block_id = b.id WHERE b.district_id = ?)");
-        $stmt->execute([$_SESSION['user_id'], $id, $district_id]);
-        
-        if ($stmt->rowCount() > 0) {
-            echo json_encode(['success' => true, 'message' => 'पीएफ फॉर्म सफलतापूर्वक ब्लॉक अधिकारी को वापस भेजा गया।']);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'पीएफ फॉर्म अपडेट करने में विफल।']);
-        }
+    // --- ब्लॉक अधिकारी द्वारा भेजे गए एक्शन ---
+
+    // एकल PF फॉर्म को जिला अधिकारी को भेजना
+    if ($action === 'forward_district' && !empty($id)) {
+        // केवल status को अपडेट कर रहे हैं
+        $stmt = $conn->prepare("UPDATE pf_submissions SET status = 'forwarded_to_district' WHERE id = ?");
+        $stmt->execute([$id]);
+        $response['success'] = true;
+        $response['message'] = 'पीएफ फॉर्म सफलतापूर्वक जिला अधिकारी को भेजा गया!';
     }
-    // कई रिकॉर्ड्स को स्वीकृत करने के लिए
-    elseif ($action === 'approve_multiple_district') {
+    
+    // एकल PF फॉर्म को स्कूल को वापस भेजना
+    elseif ($action === 'send_back_school' && !empty($id)) {
+        $stmt = $conn->prepare("UPDATE pf_submissions SET status = 'sent_back_to_school' WHERE id = ?");
+        $stmt->execute([$id]);
+        $response['success'] = true;
+        $response['message'] = 'पीएफ फॉर्म सफलतापूर्वक स्कूल को वापस भेजा गया!';
+    }
+
+    // एकाधिक PF फॉर्म को जिला अधिकारी को भेजना
+    elseif ($action === 'forward_multiple_district' && !empty($ids)) {
         $id_array = explode(',', $ids);
-        $placeholders = str_repeat('?,', count($id_array) - 1) . '?';
-        $stmt = $conn->prepare("UPDATE pf_submissions SET status = 'approved_by_district', approved_by_district_id = ?, approved_date = NOW() WHERE id IN ($placeholders) AND id IN (SELECT pf.id FROM pf_submissions pf JOIN schools s ON pf.school_udise = s.udise_code JOIN blocks b ON s.block_id = b.id WHERE b.district_id = ?)");
-        $params = array_merge([$_SESSION['user_id']], $id_array, [$district_id]);
-        $stmt->execute($params);
-        
-        if ($stmt->rowCount() > 0) {
-            echo json_encode(['success' => true, 'message' => 'चयनित पीएफ फॉर्म सफलतापूर्वक स्वीकृत किए गए।']);
+        $id_array = array_map('intval', $id_array);
+        $id_array = array_filter($id_array);
+
+        if (!empty($id_array)) {
+            $placeholders = str_repeat('?,', count($id_array) - 1) . '?';
+            
+            $stmt = $conn->prepare("UPDATE pf_submissions SET status = 'forwarded_to_district' WHERE id IN ($placeholders)");
+            $stmt->execute($id_array);
+            $response['success'] = true;
+            $response['message'] = count($id_array) . ' चयनित पीएफ फॉर्म सफलतापूर्वक जिला अधिकारी को भेजे गए!';
         } else {
-            echo json_encode(['success' => false, 'message' => 'पीएफ फॉर्म अपडेट करने में विफल।']);
+            $response['message'] = 'भेजने के लिए कोई वैध ID नहीं मिली।';
         }
     }
-    // कई रिकॉर्ड्स को वापस भेजने के लिए
-    elseif ($action === 'send_back_multiple_to_block') {
-        $id_array = explode(',', $ids);
-        $placeholders = str_repeat('?,', count($id_array) - 1) . '?';
-        $stmt = $conn->prepare("UPDATE pf_submissions SET status = 'returned_to_block', returned_by_district_id = ?, returned_date = NOW() WHERE id IN ($placeholders) AND id IN (SELECT pf.id FROM pf_submissions pf JOIN schools s ON pf.school_udise = s.udise_code JOIN blocks b ON s.block_id = b.id WHERE b.district_id = ?)");
-        $params = array_merge([$_SESSION['user_id']], $id_array, [$district_id]);
-        $stmt->execute($params);
-        
-        if ($stmt->rowCount() > 0) {
-            echo json_encode(['success' => true, 'message' => 'चयनित पीएफ फॉर्म सफलतापूर्वक ब्लॉक अधिकारी को वापस भेजे गए।']);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'पीएफ फॉर्म अपडेट करने में विफल।']);
-        }
+    
+    // --- जिला अधिकारी द्वारा भेजे गए एक्शन ---
+
+    // एकल PF फॉर्म स्वीकृत करना
+    elseif ($action === 'approve_district' && !empty($id)) {
+        $stmt = $conn->prepare("UPDATE pf_submissions SET status = 'approved_by_district' WHERE id = ?");
+        $stmt->execute([$id]);
+        $response['success'] = true;
+        $response['message'] = 'PF फॉर्म सफलतापूर्वक स्वीकृत किया गया!';
     }
+    
+    // एकल PF फॉर्म ब्लॉक को वापस भेजना
+    elseif ($action === 'send_back_to_block' && !empty($id)) {
+        $stmt = $conn->prepare("UPDATE pf_submissions SET status = 'sent_back_to_block' WHERE id = ?");
+        $stmt->execute([$id]);
+        $response['success'] = true;
+        $response['message'] = 'PF फॉर्म सफलतापूर्वक ब्लॉक अधिकारी को वापस भेजा गया!';
+    }
+    
     else {
-        echo json_encode(['success' => false, 'message' => 'अमान्य क्रिया।']);
+        $response['message'] = 'अमान्य कार्रवाई: ' . htmlspecialchars($action);
     }
+    
 } catch (PDOException $e) {
-    error_log("Error updating PF status: " . $e->getMessage());
-    echo json_encode(['success' => false, 'message' => 'डेटाबेस त्रुटि।']);
+    // डेटाबेस त्रुटि को लॉग करें
+    error_log("PF status update error: " . $e->getMessage());
+    // विस्तृत त्रुटि संदेश दिखाएं (केवल डेवलपमेंट के लिए)
+    $response['message'] = 'डेटाबेस त्रुटि: ' . $e->getMessage();
+} catch (Exception $e) {
+    // किसी भी अन्य त्रुटि को लॉग करें
+    error_log("General error in update_pf_status: " . $e->getMessage());
+    $response['message'] = 'एक त्रुटि हुई। कृपया व्यवस्थापक से संपर्क करें।';
 }
+
+// JSON प्रतिक्रिया भेजें
+echo json_encode($response);
 ?>

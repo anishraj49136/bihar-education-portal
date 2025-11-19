@@ -6,13 +6,9 @@ checkUserType('block_officer');
 
 // ब्लॉक आईडी प्राप्त करें
  $block_id = null;
-
-// पहले सेशन से जांचें
 if (isset($_SESSION['block_id'])) {
     $block_id = $_SESSION['block_id'];
-} 
-// अगर सेशन में नहीं है, तो डेटाबेस से प्राप्त करें
-else {
+} else {
     try {
         $user_id = $_SESSION['user_id'] ?? null;
         if ($user_id) {
@@ -21,17 +17,14 @@ else {
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($result && !empty($result['block_id'])) {
                 $block_id = $result['block_id'];
-                // सेशन में सेव करें ताकि बाद में फिर से क्वेरी न करनी पड़े
                 $_SESSION['block_id'] = $block_id;
             }
         }
     } catch (PDOException $e) {
-        // क्वेरी फेल होने पर
         error_log("Error fetching block_id: " . $e->getMessage());
     }
 }
 
-// अगर भी ब्लॉक आईडी नहीं मिली, तो त्रुटि दिखाएं
 if (!$block_id) {
     $_SESSION['error_message'] = "प्रखंड शिक्षा अधिकारी के लिए ब्लॉक ID निर्धारित नहीं है। कृपया लॉगिन करें।";
     header("Location: login.php");
@@ -47,9 +40,7 @@ if (!$block_id) {
  $selected_month = $_GET['month'] ?? date('F');
  $selected_year = $_GET['year'] ?? date('Y');
  $udise_code = $_GET['udise_code'] ?? '';
- $pf_teacher_name = $_GET['pf_teacher_name'] ?? ''; // This will be unused now
- $pf_pran_uan = $_GET['pf_pran_uan'] ?? '';       // This will be unused now
- $active_tab = $_GET['tab'] ?? 'attendance'; // Determine which tab should be active
+ $active_tab = $_GET['tab'] ?? 'attendance';
 
 // पेजिनेशन वेरिएबल्स
  $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
@@ -92,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } catch (PDOException $e) {
         $_SESSION['error_message'] = "त्रुटि: " . $e->getMessage();
     }
-    header("Location: block_officer_dashboard.php?month=$selected_month&year=$selected_year&udise_code=$udise_code&pf_teacher_name=$pf_teacher_name&pf_pran_uan=$pf_pran_uan&page=$page&per_page=$per_page&tab=$active_tab");
+    header("Location: block_officer_dashboard.php?month=$selected_month&year=$selected_year&udise_code=$udise_code&page=$page&per_page=$per_page&tab=$active_tab");
     exit;
 }
 
@@ -119,9 +110,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['action_forward']) ||
     } catch (PDOException $e) {
         $_SESSION['error_message'] = "त्रुटि: " . $e->getMessage();
     }
-    header("Location: block_officer_dashboard.php?month=$selected_month&year=$selected_year&udise_code=$udise_code&pf_teacher_name=$pf_teacher_name&pf_pran_uan=$pf_pran_uan&page=$page&per_page=$per_page&tab=$active_tab");
+    header("Location: block_officer_dashboard.php?month=$selected_month&year=$selected_year&udise_code=$udise_code&page=$page&per_page=$per_page&tab=$active_tab");
     exit;
 }
+
+// --- नया लॉजिक: लॉक किए गए PF संयोजनों को पहचानें ---
+ $locked_pf_combinations = [];
+try {
+    $locked_sql = "SELECT DISTINCT category, class_group 
+                   FROM pf_submissions pf
+                   JOIN schools s ON pf.school_udise = s.udise_code
+                   WHERE s.block_id = ? AND pf.status = 'forwarded_to_district'";
+    
+    $stmt_locked = $conn->prepare($locked_sql);
+    $stmt_locked->execute([$block_id]);
+    $locked_results = $stmt_locked->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($locked_results as $row) {
+        $key = $row['category'] . '|' . $row['class_group']; 
+        $locked_pf_combinations[$key] = true;
+    }
+
+} catch (PDOException $e) {
+    error_log("Error fetching locked PF combinations: " . $e->getMessage());
+}
+// --- लॉजिक समाप्त ---
+
 
 // कुल रिकॉर्ड्स की गिनती प्राप्त करें
  $count_sql = "SELECT COUNT(*) as total
@@ -137,7 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['action_forward']) ||
  $total_pages = ceil($total_records / $per_page);
 
 // उपस्थिति रिकॉर्ड्स प्राप्त करें
- $sql = "SELECT t.id as teacher_id, t.name, t.mobile, t.pran_no, t.uan_no, t.class, 
+ $sql = "SELECT t.id as teacher_id, t.name, t.mobile, t.pran_no, t.uan_no, t.class, t.category,
                a.total_attendance_days, a.in_time_count, a.out_time_count, a.unauthorized_absence_days, a.leave_days, a.remarks";
                
 if ($has_status_column) {
@@ -158,7 +172,6 @@ if (!empty($udise_code)) {
     $params = [$block_id, $selected_month, $selected_year];
 }
 
-// पेजिनेशन के लिए LIMIT और OFFSET जोड़ें
 if ($per_page !== 'all') {
     $sql .= " LIMIT $per_page OFFSET $offset";
 }
@@ -167,8 +180,7 @@ if ($per_page !== 'all') {
  $stmt->execute($params);
  $attendance_records = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// --- PF रिकॉर्ड्स प्राप्त करने का लॉजिक (डिबगिंग से बाहर लाया गया) ---
-// यही वह कोड है जो डिबगिंग ब्लॉक में था और अब यहाँ स्थानांतरित किया गया है।
+// PF रिकॉर्ड्स प्राप्त करने का लॉजिक
  $pf_records = [];
 try {
     $pf_sql = "SELECT pf.*, 
@@ -179,22 +191,17 @@ try {
                WHERE s.block_id = ? AND pf.status = 'Pending at Block Officer'";
     
     $pf_params = [$block_id];
-
-    // Add UDISE filter if exists
     if (!empty($udise_code)) {
         $pf_sql .= " AND s.udise_code LIKE ?";
         $pf_params[] = '%' . $udise_code . '%';
     }
-
-    // Add Month/Year filter if exists
-    // Assuming pf_submissions.month column is in 'YYYY-MM' format
     if (!empty($selected_month) && !empty($selected_year)) {
         $date_object = DateTime::createFromFormat('F', $selected_month);
         if ($date_object) {
             $month_number = $date_object->format('m');
             $year_month = $selected_year . '-' . $month_number;
             $pf_sql .= " AND pf.month LIKE ?";
-            $pf_params[] = $year_month . '%'; // Using LIKE with % to be safe
+            $pf_params[] = $year_month . '%';
         }
     }
     
@@ -203,11 +210,8 @@ try {
     $pf_records = $pf_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
-    // डेटाबेस त्रुटि होने पर लॉग करें, उपयोगकर्ता को न दिखाएं
     error_log("Error fetching PF records: " . $e->getMessage());
-    // यहां एक एरर मैसेज सेट किया जा सकता है या $pf_records को खाली छोड़ दिया जा सकता है
 }
-// --- PF रिकॉर्ड्स लॉजिक समाप्त ---
 ?>
 <!DOCTYPE html>
 <html lang="hi">
@@ -231,6 +235,8 @@ try {
         .card-header { background: linear-gradient(to right, var(--primary-color), var(--secondary-color)); color: white; font-weight: 600; border-radius: 15px 15px 0 0 !important; }
         .btn-primary { background: linear-gradient(to right, var(--primary-color), var(--secondary-color)); border: none; border-radius: 50px; padding: 10px 25px; font-weight: 500; transition: all 0.3s ease; }
         .btn-primary:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(106, 27, 154, 0.3); }
+        .btn-info { background-color: #0dcaf0; border-color: #0dcaf0; }
+        .btn-info:hover { background-color: #0b5ed7; border-color: #0a58ca; }
         .table { border-radius: 10px; overflow: hidden; }
         .thead { background: linear-gradient(to right, var(--primary-color), var(--secondary-color)); color: white; }
         .user-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(to right, var(--primary-color), var(--secondary-color)); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; }
@@ -247,6 +253,8 @@ try {
         .pdf-link:hover { color: #a02530; text-decoration: underline; }
         .nav-tabs .nav-link { color: var(--primary-color); font-weight: 500; }
         .nav-tabs .nav-link.active { color: var(--secondary-color); background-color: rgba(106, 27, 154, 0.1); border-color: var(--primary-color); }
+        .locked-row { background-color: #f8f9fa; opacity: 0.8; }
+        .locked-icon { color: #6c757d; }
         /* मोबाइल रेस्पॉन्सिव स्टाइल */
         @media (max-width: 992px) { 
             .sidebar { transform: translateX(-100%); } 
@@ -318,7 +326,15 @@ try {
             <div class="tab-pane fade <?php echo ($active_tab === 'attendance') ? 'show active' : ''; ?>" id="attendance" role="tabpanel" aria-labelledby="attendance-tab">
                 <!-- फिल्टर कार्ड -->
                 <div class="card">
-                    <div class="card-header"><h5 class="mb-0">शिक्षक उपस्थिति विवरणी खोजें</h5></div>
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">शिक्षक उपस्थिति विवरणी खोजें</h5>
+                        <div>
+                            <!-- नया बटन: CSV रिपोर्ट डाउनलोड करने के लिए -->
+                            <a href="generate_payment_report.php?block_id=<?php echo $block_id; ?>&month=<?php echo urlencode($selected_month); ?>&year=<?php echo $selected_year; ?>" class="btn btn-info btn-sm">
+                                <i class="fas fa-file-csv"></i> भुगतान हेतु शिक्षक रिपोर्ट (CSV) डाउनलोड करें
+                            </a>
+                        </div>
+                    </div>
                     <div class="card-body">
                         <form method="get" action="">
                             <input type="hidden" name="tab" value="attendance">
@@ -362,7 +378,7 @@ try {
                     <input type="hidden" name="action" value="update_attendance">
                     <div class="card">
                         <div class="card-header d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0">शिक्षकबार उपस्थिति विवरणी (कक्षा 9-12) विद्यालय के अनुसार आप चाहे तो इसमें परिवर्तन कर सकते हैं |</h5>
+                            <h5 class="mb-0">शिक्षकबार उपस्थिति विवरणी (कक्षा 9-12) विद्यालय के अनुसार</h5>
                             <div>
                                 <button type="submit" class="btn btn-light btn-sm"><i class="fas fa-save"></i> परिवर्तन अपडेट करें</button>
                                 <?php if ($has_status_column): ?>
@@ -396,33 +412,43 @@ try {
                                         <?php if (count($attendance_records) > 0): ?>
                                             <?php $serial_number = ($page - 1) * $per_page + 1; ?>
                                             <?php foreach ($attendance_records as $record): ?>
-                                            <tr>
-                                                <td><?php echo $serial_number; ?></td>
-                                                <?php if ($has_status_column): ?>
-                                                <td><input type="checkbox" name="teacher_ids[]" value="<?php echo $record['teacher_id']; ?>" class="teacher-checkbox"></td>
-                                                <?php endif; ?>
-                                                <td><?php echo $record['school_name']; ?><br><small><?php echo $record['udise_code']; ?></small></td>
-                                                <td><?php echo $record['name']; ?></td>
-                                                <td><?php echo $record['pran_no'] ?: $record['uan_no']; ?></td>
-                                                <td><input type="number" class="form-control attendance-input" name="attendance_data[<?php echo $record['teacher_id']; ?>][total_attendance_days]" value="<?php echo $record['total_attendance_days'] ?? 0; ?>"></td>
-                                                <td><input type="number" class="form-control attendance-input" name="attendance_data[<?php echo $record['teacher_id']; ?>][unauthorized_absence_days]" value="<?php echo $record['unauthorized_absence_days'] ?? 0; ?>"></td>
-                                                <td><input type="number" class="form-control attendance-input" name="attendance_data[<?php echo $record['teacher_id']; ?>][leave_days]" value="<?php echo $record['leave_days'] ?? 0; ?>"></td>
-                                                <td><textarea class="form-control" name="attendance_data[<?php echo $record['teacher_id']; ?>][remarks]" rows="1"><?php echo $record['remarks'] ?? ''; ?></textarea></td>
-                                                <?php if ($has_status_column): ?>
-                                                <td>
-                                                    <?php
-                                                    $status_text = 'Pending';
-                                                    $status_class = 'bg-secondary';
-                                                    if (isset($record['status'])) {
-                                                        if ($record['status'] === 'forwarded_to_admin') { $status_text = 'Forwarded'; $status_class = 'bg-success'; }
-                                                        elseif ($record['status'] === 'sent_back_to_school') { $status_text = 'Sent Back'; $status_class = 'bg-warning'; }
-                                                    }
-                                                    ?>
-                                                    <span class="badge <?php echo $status_class; ?> status-badge"><?php echo $status_text; ?></span>
-                                                </td>
-                                                <?php endif; ?>
-                                                <td>
-                                            </tr>
+                                                <?php
+                                                // जांचें कि क्या इस शिक्षक का समूह लॉक है
+                                                $current_key = ($record['category'] ?? '') . '|' . ($record['class'] ?? '');
+                                                $is_disabled = isset($locked_pf_combinations[$current_key]) ? 'disabled' : '';
+                                                $is_locked_row = isset($locked_pf_combinations[$current_key]);
+                                                ?>
+                                                <tr class="<?php echo $is_locked_row ? 'locked-row' : ''; ?>">
+                                                    <td><?php echo $serial_number; ?></td>
+                                                    <?php if ($has_status_column): ?>
+                                                    <td><input type="checkbox" name="teacher_ids[]" value="<?php echo $record['teacher_id']; ?>" class="teacher-checkbox" <?php echo $is_disabled; ?>></td>
+                                                    <?php endif; ?>
+                                                    <td><?php echo $record['school_name']; ?><br><small><?php echo $record['udise_code']; ?></small></td>
+                                                    <td>
+                                                        <?php echo $record['name']; ?>
+                                                        <?php if ($is_locked_row): ?>
+                                                            <i class="fas fa-lock locked-icon" title="इस श्रेणी/वर्ग का PF जिले को भेजा जा चुका है"></i>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td><?php echo $record['pran_no'] ?: $record['uan_no']; ?></td>
+                                                    <td><input type="number" class="form-control attendance-input" name="attendance_data[<?php echo $record['teacher_id']; ?>][total_attendance_days]" value="<?php echo $record['total_attendance_days'] ?? 0; ?>" <?php echo $is_disabled; ?>></td>
+                                                    <td><input type="number" class="form-control attendance-input" name="attendance_data[<?php echo $record['teacher_id']; ?>][unauthorized_absence_days]" value="<?php echo $record['unauthorized_absence_days'] ?? 0; ?>" <?php echo $is_disabled; ?>></td>
+                                                    <td><input type="number" class="form-control attendance-input" name="attendance_data[<?php echo $record['teacher_id']; ?>][leave_days]" value="<?php echo $record['leave_days'] ?? 0; ?>" <?php echo $is_disabled; ?>></td>
+                                                    <td><textarea class="form-control" name="attendance_data[<?php echo $record['teacher_id']; ?>][remarks]" rows="1" <?php echo $is_disabled; ?>><?php echo $record['remarks'] ?? ''; ?></textarea></td>
+                                                    <?php if ($has_status_column): ?>
+                                                    <td>
+                                                        <?php
+                                                        $status_text = 'Pending';
+                                                        $status_class = 'bg-secondary';
+                                                        if (isset($record['status'])) {
+                                                            if ($record['status'] === 'forwarded_to_admin') { $status_text = 'Forwarded'; $status_class = 'bg-success'; }
+                                                            elseif ($record['status'] === 'sent_back_to_school') { $status_text = 'Sent Back'; $status_class = 'bg-warning'; }
+                                                        }
+                                                        ?>
+                                                        <span class="badge <?php echo $status_class; ?> status-badge"><?php echo $status_text; ?></span>
+                                                    </td>
+                                                    <?php endif; ?>
+                                                </tr>
                                             <?php $serial_number++; ?>
                                             <?php endforeach; ?>
                                         <?php else: ?>
@@ -446,7 +472,7 @@ try {
                                     <ul class="pagination mb-0">
                                         <?php if ($page > 1): ?>
                                         <li class="page-item">
-                                            <a class="page-link" href="?month=<?php echo $selected_month; ?>&year=<?php echo $selected_year; ?>&udise_code=<?php echo $udise_code; ?>&pf_teacher_name=<?php echo $pf_teacher_name; ?>&pf_pran_uan=<?php echo $pf_pran_uan; ?>&per_page=<?php echo $per_page; ?>&page=<?php echo $page - 1; ?>&tab=attendance" aria-label="Previous">
+                                            <a class="page-link" href="?month=<?php echo $selected_month; ?>&year=<?php echo $selected_year; ?>&udise_code=<?php echo $udise_code; ?>&per_page=<?php echo $per_page; ?>&page=<?php echo $page - 1; ?>&tab=attendance" aria-label="Previous">
                                                 <span aria-hidden="true">&laquo;</span>
                                             </a>
                                         </li>
@@ -458,7 +484,7 @@ try {
                                         $end_page = min($total_pages, $start_page + $max_visible_pages - 1);
                                         
                                         if ($start_page > 1) {
-                                            echo '<li class="page-item"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&pf_teacher_name='.$pf_teacher_name.'&pf_pran_uan='.$pf_pran_uan.'&per_page='.$per_page.'&page=1&tab=attendance">1</a></li>';
+                                            echo '<li class="page-item"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&per_page='.$per_page.'&page=1&tab=attendance">1</a></li>';
                                             if ($start_page > 2) {
                                                 echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
                                             }
@@ -466,20 +492,20 @@ try {
                                         
                                         for ($i = $start_page; $i <= $end_page; $i++) {
                                             $active_class = ($i == $page) ? 'active' : '';
-                                            echo '<li class="page-item '.$active_class.'"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&pf_teacher_name='.$pf_teacher_name.'&pf_pran_uan='.$pf_pran_uan.'&per_page='.$per_page.'&page='.$i.'&tab=attendance">'.$i.'</a></li>';
+                                            echo '<li class="page-item '.$active_class.'"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&per_page='.$per_page.'&page='.$i.'&tab=attendance">'.$i.'</a></li>';
                                         }
                                         
                                         if ($end_page < $total_pages) {
                                             if ($end_page < $total_pages - 1) {
                                                 echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
                                             }
-                                            echo '<li class="page-item"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&pf_teacher_name='.$pf_teacher_name.'&pf_pran_uan='.$pf_pran_uan.'&per_page='.$per_page.'&page='.$total_pages.'&tab=attendance">'.$total_pages.'</a></li>';
+                                            echo '<li class="page-item"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&per_page='.$per_page.'&page='.$total_pages.'&tab=attendance">'.$total_pages.'</a></li>';
                                         }
                                         ?>
                                         
                                         <?php if ($page < $total_pages): ?>
                                         <li class="page-item">
-                                            <a class="page-link" href="?month=<?php echo $selected_month; ?>&year=<?php echo $selected_year; ?>&udise_code=<?php echo $udise_code; ?>&pf_teacher_name=<?php echo $pf_teacher_name; ?>&pf_pran_uan=<?php echo $pf_pran_uan; ?>&per_page=<?php echo $per_page; ?>&page=<?php echo $page + 1; ?>&tab=attendance" aria-label="Next">
+                                            <a class="page-link" href="?month=<?php echo $selected_month; ?>&year=<?php echo $selected_year; ?>&udise_code=<?php echo $udise_code; ?>&per_page=<?php echo $per_page; ?>&page=<?php echo $page + 1; ?>&tab=attendance" aria-label="Next">
                                                 <span aria-hidden="true">&raquo;</span>
                                             </a>
                                         </li>
@@ -612,7 +638,7 @@ try {
                                         </tr>
                                         <?php endforeach; ?>
                                     <?php else: ?>
-                                        <tr><td colspan="9" class="text-center">इस महीने के लिए कोई पीएफ रिकॉर्ड नहीं मिला।</td></tr>
+                                        <tr><td colspan="9" class="text-center">इस महीने के लिए कोई पीएफ रिकॉर्ड नहीं मिला।ों</tr>
                                     <?php endif; ?>
                                 </tbody>
                             </table>
@@ -640,7 +666,7 @@ try {
         <?php if ($has_status_column): ?>
         // सभी चेकबॉक्स का चयन करें
         document.getElementById('selectAll').addEventListener('change', function() {
-            document.querySelectorAll('.teacher-checkbox').forEach(cb => cb.checked = this.checked);
+            document.querySelectorAll('.teacher-checkbox:not([disabled])').forEach(cb => cb.checked = this.checked);
         });
         <?php endif; ?>
         
@@ -648,37 +674,6 @@ try {
         document.getElementById('selectAllPF').addEventListener('change', function() {
             document.querySelectorAll('.pf-checkbox').forEach(cb => cb.checked = this.checked);
         });
-        
-        // जिले को भेजने के लिए फंक्शन
-        function forwardToDistrict(teacherId, month, year) {
-            if (confirm('क्या आप वाकई इस शिक्षक की उपस्थिति विवरणी को जिले को भेजना चाहते हैं?')) {
-                fetch('forward_to_district.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: 'teacher_id=' + teacherId + '&month=' + month + '&year=' + year
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('उपस्थिति विवरणी सफलतापूर्वक जिले को भेजी गई!');
-                        location.reload();
-                    } else {
-                        alert('त्रुटि: ' + data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('त्रुटि: कृपया बाद में पुन: प्रयास करें।');
-                });
-            }
-        }
-        
-        // PF फॉर्म देखने के लिए
-        function viewPFForm(id) {
-            window.open('view_pf_form.php?id=' + id, '_blank');
-        }
         
         // PF जिले को भेजने के लिए
         function forwardPFDistrict(id) {
@@ -694,7 +689,7 @@ try {
                 .then(data => {
                     if (data.success) {
                         alert('पीएफ फॉर्म सफलतापूर्वक जिला अधिकारी को भेजा गया!');
-                        location.reload();
+                        setTimeout(() => location.reload(), 1000); // 1 सेकंड बाद रीफ्रेश
                     } else {
                         alert('त्रुटि: ' + data.message);
                     }
@@ -720,7 +715,7 @@ try {
                 .then(data => {
                     if (data.success) {
                         alert('पीएफ फॉर्म सफलतापूर्वक विद्यालय को वापस भेजा गया!');
-                        location.reload();
+                        setTimeout(() => location.reload(), 1000); // 1 सेकंड बाद रीफ्रेश
                     } else {
                         alert('त्रुटि: ' + data.message);
                     }
@@ -756,7 +751,7 @@ try {
                 .then(data => {
                     if (data.success) {
                         alert('चयनित पीएफ फॉर्म सफलतापूर्वक जिला अधिकारी को भेजे गए!');
-                        location.reload();
+                        setTimeout(() => location.reload(), 1000); // 1 सेकंड बाद रीफ्रेश
                     } else {
                         alert('त्रुटि: ' + data.message);
                     }
