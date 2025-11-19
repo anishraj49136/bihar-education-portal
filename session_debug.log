@@ -1,0 +1,160 @@
+2025-11-19 07:51:15 - Session ID: gi7252827cgu5v8n62gf1b9ufb
+POST Data: Array
+(
+)
+
+Session Data: Array
+(
+    [user_id] => 1
+    [username] => admin
+    [name] => System Administrator
+    [user_type] => admin
+)
+
+2025-11-19 07:51:45 - Session ID: gi7252827cgu5v8n62gf1b9ufb
+POST Data: Array
+(
+)
+
+Session Data: Array
+(
+    [user_id] => 1
+    [username] => admin
+    [name] => System Administrator
+    [user_type] => admin
+)
+
+2025-11-19 07:51:54 - Session ID: gi7252827cgu5v8n62gf1b9ufb
+POST Data: Array
+(
+)
+
+Session Data: Array
+(
+    [user_id] => 1
+    [username] => admin
+    [name] => System Administrator
+    [user_type] => admin
+)
+
+2025-11-19 07:58:31 - Request Method: GET
+POST Data: Array
+(
+)
+
+Session Data: Array
+(
+    [user_id] => 2
+    [username] => admin2
+    [name] => Abhishek Saran
+    [user_type] => district_staff
+    [district_id] => 1
+)
+
+Headers: Array
+(
+    [Host] => localhost
+    [Connection] => keep-alive
+    [Cache-Control] => max-age=0
+    [sec-ch-ua] => "Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"
+    [sec-ch-ua-mobile] => ?0
+    [sec-ch-ua-platform] => "Windows"
+    [Upgrade-Insecure-Requests] => 1
+    [User-Agent] => Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36
+    [Accept] => text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+    [Sec-Fetch-Site] => none
+    [Sec-Fetch-Mode] => navigate
+    [Sec-Fetch-User] => ?1
+    [Sec-Fetch-Dest] => document
+    [Accept-Encoding] => gzip, deflate, br, zstd
+    [Accept-Language] => en-US,en;q=0.9,hi;q=0.8
+    [Cookie] => PHPSESSID=gi7252827cgu5v8n62gf1b9ufb
+)
+
+2025-11-19 08:08:08 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:08:45 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:12:41 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:12:47 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:12:48 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:12:49 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:12:53 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:13:29 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:13:30 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:13:30 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:13:39 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:13:39 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:13:40 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:13:40 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:13:40 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:13:40 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:13:40 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:13:41 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:13:43 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: Not set
+User Type: Not set
+2025-11-19 08:13:44 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: Not set
+User Type: Not set
+2025-11-19 08:13:52 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:22:06 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:22:08 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:22:09 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:22:09 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:22:09 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:22:09 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:22:09 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff
+2025-11-19 08:22:09 - district_pf_dashboard.php - Session ID: gi7252827cgu5v8n62gf1b9ufb
+User ID: 2
+User Type: district_staff

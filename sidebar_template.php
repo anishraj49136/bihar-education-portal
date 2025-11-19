@@ -38,6 +38,7 @@
 			<li class="nav-item"><a class="nav-link" href="manage_schools.php"><i class="fas fa-school"></i> विद्यालय प्रबंधन</a></li>
 			<li class="nav-item"><a class="nav-link" href="teachers.php"><i class="fas fa-chalkboard-teacher"></i> शिक्षक प्रबंधन</a></li>
 			<li class="nav-item"><a class="nav-link" href="district_attendance_dashboard.php"><i class="fas fa-calendar-check"></i> उपस्थिति विवरणी</a></li>
+			<li class="nav-item"><a class="nav-link" href="district_pf_dashboard.php"><i class="fas fa-calendar-check"></i> Fwd विवरणी</a></li>
 			<li class="nav-item"><a class="nav-link" href="view_school_photos.php"><i class="fas fa-chalkboard-teacher"></i> विद्यालय तस्वीर प्रबंधन</a></li>
             <li class="nav-item"><a class="nav-link" href="letters.php"><i class="fas fa-envelope"></i> पत्र</a></li>
             <li class="nav-item"><a class="nav-link" href="notices.php"><i class="fas fa-bullhorn"></i> नोटिस</a></li>
@@ -49,6 +50,7 @@
 			<li class="nav-item"><a class="nav-link" href="teachers.php"><i class="fas fa-chalkboard-teacher"></i> शिक्षक प्रबंधन</a></li>
 			<li class="nav-item"><a class="nav-link" href="district_attendance_dashboard.php"><i class="fas fa-calendar-check"></i> उपस्थिति विवरणी</a></li>
 			<li class="nav-item"><a class="nav-link" href="export_district_attendance.php"><i class="fas fa-calendar-check"></i> Export उपस्थिति विवरणी</a></li>
+			<li class="nav-item"><a class="nav-link" href="district_pf_dashboard.php"><i class="fas fa-calendar-check"></i> Fwd विवरणी</a></li>
             <li class="nav-item"><a class="nav-link" href="salary_management.php"><i class="fas fa-money-check-alt"></i> वेतन प्रबंधन</a></li>
             <li class="nav-item"><a class="nav-link" href="eshikshakosh_data.php"><i class="fas fa-database"></i> ई-शिक्षकोष डेटा</a></li>
 			<li class="nav-item"><a class="nav-link" href="view_school_photos.php"><i class="fas fa-chalkboard-teacher"></i> विद्यालय तस्वीर प्रबंधन</a></li>
