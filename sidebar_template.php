@@ -27,7 +27,6 @@
             <li class="nav-item"><a class="nav-link" href="notices.php"><i class="fas fa-bullhorn"></i> नोटिस</a></li>
         <?php elseif ($_SESSION['user_type'] === 'ddo' || $_SESSION['user_type'] === 'block_officer'): ?>
             <li class="nav-item"><a class="nav-link" href="<?php echo $_SESSION['user_type']; ?>_dashboard.php"><i class="fas fa-tachometer-alt"></i> डैशबोर्ड</a></li>
-			<li class="nav-item"><a class="nav-link active" href="pf_management.php"><i class="fas fa-file-pdf"></i> पीडीएफ प्रबंधन</a></li>
 			<li class="nav-item"><a class="nav-link" href="manage_schools.php"><i class="fas fa-school"></i> विद्यालय प्रबंधन</a></li>
 			<li class="nav-item"><a class="nav-link" href="teachers.php"><i class="fas fa-chalkboard-teacher"></i> शिक्षक प्रबंधन</a></li>
 			<li class="nav-item"><a class="nav-link" href="view_school_photos.php"><i class="fas fa-chalkboard-teacher"></i> विद्यालय तस्वीर प्रबंधन</a></li>
@@ -38,6 +37,7 @@
             <li class="nav-item"><a class="nav-link" href="district_dashboard.php"><i class="fas fa-tachometer-alt"></i> डैशबोर्ड</a></li>
 			<li class="nav-item"><a class="nav-link" href="manage_schools.php"><i class="fas fa-school"></i> विद्यालय प्रबंधन</a></li>
 			<li class="nav-item"><a class="nav-link" href="teachers.php"><i class="fas fa-chalkboard-teacher"></i> शिक्षक प्रबंधन</a></li>
+			<li class="nav-item"><a class="nav-link" href="district_attendance_dashboard.php"><i class="fas fa-calendar-check"></i> उपस्थिति विवरणी</a></li>
 			<li class="nav-item"><a class="nav-link" href="view_school_photos.php"><i class="fas fa-chalkboard-teacher"></i> विद्यालय तस्वीर प्रबंधन</a></li>
             <li class="nav-item"><a class="nav-link" href="letters.php"><i class="fas fa-envelope"></i> पत्र</a></li>
             <li class="nav-item"><a class="nav-link" href="notices.php"><i class="fas fa-bullhorn"></i> नोटिस</a></li>
@@ -47,6 +47,8 @@
             <li class="nav-item"><a class="nav-link" href="manage_users.php"><i class="fas fa-users-cog"></i> उपयोगकर्ता प्रबंधन</a></li>
             <li class="nav-item"><a class="nav-link" href="manage_schools.php"><i class="fas fa-school"></i> विद्यालय प्रबंधन</a></li>
 			<li class="nav-item"><a class="nav-link" href="teachers.php"><i class="fas fa-chalkboard-teacher"></i> शिक्षक प्रबंधन</a></li>
+			<li class="nav-item"><a class="nav-link" href="district_attendance_dashboard.php"><i class="fas fa-calendar-check"></i> उपस्थिति विवरणी</a></li>
+			<li class="nav-item"><a class="nav-link" href="export_district_attendance.php"><i class="fas fa-calendar-check"></i> Export उपस्थिति विवरणी</a></li>
             <li class="nav-item"><a class="nav-link" href="salary_management.php"><i class="fas fa-money-check-alt"></i> वेतन प्रबंधन</a></li>
             <li class="nav-item"><a class="nav-link" href="eshikshakosh_data.php"><i class="fas fa-database"></i> ई-शिक्षकोष डेटा</a></li>
 			<li class="nav-item"><a class="nav-link" href="view_school_photos.php"><i class="fas fa-chalkboard-teacher"></i> विद्यालय तस्वीर प्रबंधन</a></li>

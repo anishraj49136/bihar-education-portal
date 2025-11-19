@@ -1,32 +1,38 @@
 <?php
-session_start();
-include('config.php');
-include('check_session.php');
+require_once 'config.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forward_schools'])) {
-    $schools_to_forward = $_POST['forward_schools'];
-    $forwarded_count = 0;
+// यहाँ उपयोगकर्ता प्रकार की जांच की गई है
+checkUserType(['block_officer', 'ddo']);
 
-    foreach ($schools_to_forward as $school_month) {
-        list($udise, $month) = explode('|', $school_month);
-        
-        // उन सभी रिकॉर्ड्स को अपडेट करें जो इस स्तर पर लंबित हैं
-        $update_sql = "UPDATE pf_submissions SET status = 'Pending at District', current_level = 'District', forwarded_to_district_at = NOW() 
-                       WHERE school_udise = ? AND month = ? AND status = ?";
-        
-        $pending_status = ($_SESSION['role'] == 'ddo') ? 'Pending at DDO' : 'Pending at Block Officer';
-        $stmt = $conn->prepare($update_sql);
-        $stmt->bind_param("sss", $udise, $month, $pending_status);
-        
-        if ($stmt->execute()) {
-            $forwarded_count += $stmt->affected_rows;
-        }
+header('Content-Type: application/json');
+
+ $response = ['success' => false, 'message' => ''];
+
+try {
+    $teacher_id = $_POST['teacher_id'] ?? 0;
+    $month = $_POST['month'] ?? '';
+    $year = $_POST['year'] ?? '';
+
+    if (empty($teacher_id) || empty($month) || empty($year)) {
+        throw new Exception("अपूर्ण जानकारी प्रदान की गई है।");
     }
 
-    // उपयुक्त डैशबोर्ड पर रीडायरेक्ट करें
-    $redirect_page = ($_SESSION['role'] == 'ddo') ? 'ddo_dashboard.php' : 'block_officer_dashboard.php';
-    header("Location: " . $redirect_page . "?msg=$forwarded_count रिकॉर्ड सफलतापूर्वक जिला कार्यालय को अग्रसारित किए गए।");
-} else {
-    header("Location: " . ($_SESSION['role'] == 'ddo' ? 'ddo_dashboard.php' : 'block_officer_dashboard.php') . "?msg=अमान्य अनुरोध।");
+    // उपस्थिति की स्थिति अपडेट करें
+    $stmt = $conn->prepare("UPDATE attendance SET status = 'forwarded_to_district', reviewed_by = ?, reviewed_at = NOW() WHERE teacher_id = ? AND month = ? AND year = ?");
+    $stmt->execute([$_SESSION['user_id'], $teacher_id, $month, $year]);
+
+    if ($stmt->rowCount() > 0) {
+        $response['success'] = true;
+        $response['message'] = 'डेटा सफलतापूर्वक जिले को भेजा गया।';
+    } else {
+        $response['message'] = 'कोई रिकॉर्ड अपडेट नहीं हुआ। कृपया डेटा जांचें।';
+    }
+
+} catch (PDOException $e) {
+    $response['message'] = 'डेटाबेस त्रुटि: ' . $e->getMessage();
+} catch (Exception $e) {
+    $response['message'] = $e->getMessage();
 }
+
+echo json_encode($response);
 ?>

@@ -1,7 +1,7 @@
 <?php
 require_once 'config.php';
 
-// जांचें कि उपयोगकर्ता लॉग इन है और वह DDO है
+// यहाँ उपयोगकर्ता प्रकार की जांच की गई है
 checkUserType('ddo');
 
 // ब्लॉक आईडी प्राप्त करें
@@ -43,10 +43,12 @@ if (!$block_id) {
  $stmt->execute([$block_id]);
  $block_info = $stmt->fetch(PDO::FETCH_ASSOC);
 
-// फ़िल्टर मान प्राप्त करें
+// फिल्टर मान प्राप्त करें
  $selected_month = $_GET['month'] ?? date('F');
  $selected_year = $_GET['year'] ?? date('Y');
  $udise_code = $_GET['udise_code'] ?? '';
+ $pf_teacher_name = $_GET['pf_teacher_name'] ?? '';
+ $pf_pran_uan = $_GET['pf_pran_uan'] ?? '';
 
 // पेजिनेशन वेरिएबल्स
  $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
@@ -89,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } catch (PDOException $e) {
         $_SESSION['error_message'] = "त्रुटि: " . $e->getMessage();
     }
-    header("Location: ddo_dashboard.php?month=$selected_month&year=$selected_year&udise_code=$udise_code&page=$page&per_page=$per_page");
+    header("Location: ddo_dashboard.php?month=$selected_month&year=$selected_year&udise_code=$udise_code&pf_teacher_name=$pf_teacher_name&pf_pran_uan=$pf_pran_uan&page=$page&per_page=$per_page");
     exit;
 }
 
@@ -116,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['action_forward']) ||
     } catch (PDOException $e) {
         $_SESSION['error_message'] = "त्रुटि: " . $e->getMessage();
     }
-    header("Location: ddo_dashboard.php?month=$selected_month&year=$selected_year&udise_code=$udise_code&page=$page&per_page=$per_page");
+    header("Location: ddo_dashboard.php?month=$selected_month&year=$selected_year&udise_code=$udise_code&pf_teacher_name=$pf_teacher_name&pf_pran_uan=$pf_pran_uan&page=$page&per_page=$per_page");
     exit;
 }
 
@@ -126,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['action_forward']) ||
         JOIN attendance a ON t.id = a.teacher_id
         JOIN schools s ON t.school_id = s.id
         WHERE s.block_id = '$block_id' AND a.month = '$selected_month' AND a.year = '$selected_year'
-        AND (t.class LIKE '%1-5%' OR t.class LIKE '%6-8%')"; // DDO फ़िल्टर
+        AND (t.class LIKE '%9-10%' OR t.class LIKE '%11-12%')"; // कक्षा फिल्टर
 
 if (!empty($udise_code)) {
     $count_sql .= " AND s.udise_code = '$udise_code'";
@@ -137,7 +139,7 @@ if (!empty($udise_code)) {
  $total_records = $count_stmt->fetch(PDO::FETCH_ASSOC)['total'];
  $total_pages = ceil($total_records / $per_page);
 
-// उपस्थिति रिकॉर्ड प्राप्त करें
+// उपस्थिति रिकॉर्ड्स प्राप्त करें
  $sql = "SELECT t.id as teacher_id, t.name, t.mobile, t.pran_no, t.uan_no, t.class, 
                a.total_attendance_days, a.in_time_count, a.out_time_count, a.unauthorized_absence_days, a.leave_days, a.remarks";
                
@@ -150,7 +152,7 @@ if ($has_status_column) {
         JOIN attendance a ON t.id = a.teacher_id
         JOIN schools s ON t.school_id = s.id
         WHERE s.block_id = '$block_id' AND a.month = '$selected_month' AND a.year = '$selected_year'
-        AND (t.class LIKE '%1-5%' OR t.class LIKE '%6-8%')"; // DDO फ़िल्टर
+        AND (t.class LIKE '%9-10%' OR t.class LIKE '%11-12%')"; // कक्षा फिल्टर
 
 if (!empty($udise_code)) {
     $sql .= " AND s.udise_code = '$udise_code'";
@@ -164,6 +166,37 @@ if ($per_page !== 'all') {
  $stmt = $conn->prepare($sql);
  $stmt->execute();
  $attendance_records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// PF रिकॉर्ड्स प्राप्त करें - सभी स्टेटस के रिकॉर्ड्स दिखाएं
+ $pf_records = [];
+try {
+    $pf_sql = "SELECT pf.*, t.name as teacher_name, t.pran_no, t.uan_no, 
+               s.name as school_name, s.udise_code,
+               pf.status as pf_status
+               FROM pf_submissions pf
+               JOIN teachers t ON pf.teacher_id = t.id
+               JOIN schools s ON t.school_id = s.id
+               WHERE s.block_id = ?";
+    
+    // PF फिल्टर लागू करें
+    if (!empty($pf_teacher_name)) {
+        $pf_sql .= " AND t.name LIKE '%$pf_teacher_name%'";
+    }
+    if (!empty($pf_pran_uan)) {
+        $pf_sql .= " AND (t.pran_no LIKE '%$pf_pran_uan%' OR t.uan_no LIKE '%$pf_pran_uan%')";
+    }
+    if (!empty($udise_code)) {
+        $pf_sql .= " AND s.udise_code LIKE '%$udise_code%'";
+    }
+    
+    $pf_sql .= " ORDER BY pf.created_at DESC";
+    
+    $pf_stmt = $conn->prepare($pf_sql);
+    $pf_stmt->execute([$block_id]);
+    $pf_records = $pf_stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Error fetching PF records: " . $e->getMessage());
+}
 ?>
 
 <!DOCTYPE html>
@@ -200,7 +233,10 @@ if ($per_page !== 'all') {
         .pagination-info { margin-right: 20px; }
         .page-link { color: var(--primary-color); }
         .page-item.active .page-link { background-color: var(--primary-color); border-color: var(--primary-color); }
-        
+        .pdf-link { color: #dc3545; font-weight: bold; text-decoration: none; }
+        .pdf-link:hover { color: #a02530; text-decoration: underline; }
+        .nav-tabs .nav-link { color: var(--primary-color); font-weight: 500; }
+        .nav-tabs .nav-link.active { color: var(--secondary-color); background-color: rgba(106, 27, 154, 0.1); border-color: var(--primary-color); }
         /* मोबाइल रेस्पॉन्सिव स्टाइल */
         @media (max-width: 992px) { 
             .sidebar { transform: translateX(-100%); } 
@@ -257,179 +293,338 @@ if ($per_page !== 'all') {
         <div class="alert alert-danger alert-dismissible fade show" role="alert"><?php echo $_SESSION['error_message']; unset($_SESSION['error_message']); ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
         <?php endif; ?>
 
-        <!-- फ़िल्टर कार्ड -->
-        <div class="card">
-            <div class="card-header"><h5 class="mb-0">शिक्षक उपस्थिति विवरणी खोजें</h5></div>
-            <div class="card-body">
-                <form method="get" action="">
-                    <div class="row g-3">
-                        <div class="col-md-3">
-                            <label for="month" class="form-label">महीना</label>
-                            <select class="form-select" id="month" name="month">
-                                <?php $months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']; foreach($months as $month): ?>
-                                <option value="<?php echo $month; ?>" <?php echo ($selected_month === $month) ? 'selected' : ''; ?>><?php echo $month; ?></option>
-                                <?php endforeach; ?>
-                            </select>
+        <!-- टैब नेविगेशन -->
+        <ul class="nav nav-tabs" id="dashboardTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="attendance-tab" data-bs-toggle="tab" data-bs-target="#attendance" type="button" role="tab" aria-controls="attendance" aria-selected="true">उपस्थिति विवरणी</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="pf-tab" data-bs-toggle="tab" data-bs-target="#pf" type="button" role="tab" aria-controls="pf" aria-selected="false">पीएफ फॉर्म</button>
+            </li>
+        </ul>
+        
+        <div class="tab-content" id="dashboardTabsContent">
+            <!-- उपस्थिति टैब -->
+            <div class="tab-pane fade show active" id="attendance" role="tabpanel" aria-labelledby="attendance-tab">
+                <!-- फिल्टर कार्ड -->
+                <div class="card">
+                    <div class="card-header"><h5 class="mb-0">शिक्षक उपस्थिति विवरणी खोजें</h5></div>
+                    <div class="card-body">
+                        <form method="get" action="">
+                            <div class="row g-3">
+                                <div class="col-md-3">
+                                    <label for="month" class="form-label">महीना</label>
+                                    <select class="form-select" id="month" name="month">
+                                        <?php $months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']; foreach($months as $month): ?>
+                                        <option value="<?php echo $month; ?>" <?php echo ($selected_month === $month) ? 'selected' : ''; ?>><?php echo $month; ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="year" class="form-label">वर्ष</label>
+                                    <input type="number" class="form-control" id="year" name="year" value="<?php echo $selected_year; ?>">
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="udise_code" class="form-label">UDISE कोड</label>
+                                    <input type="text" class="form-control" id="udise_code" name="udise_code" value="<?php echo htmlspecialchars($udise_code); ?>">
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="per_page" class="form-label">प्रति पृष्ठ रिकॉर्ड</label>
+                                    <select class="form-select" id="per_page" name="per_page">
+                                        <option value="20" <?php echo ($per_page === 20) ? 'selected' : ''; ?>>20</option>
+                                        <option value="50" <?php echo ($per_page === 50) ? 'selected' : ''; ?>>50</option>
+                                        <option value="100" <?php echo ($per_page === 100) ? 'selected' : ''; ?>>100</option>
+                                        <option value="500" <?php echo ($per_page === 500) ? 'selected' : ''; ?>>500</option>
+                                        <option value="all" <?php echo ($per_page === 'all') ? 'selected' : ''; ?>>सभी</option>
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> खोजें</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- उपस्थिति रिकॉर्ड्स -->
+                <form method="post" action="" id="attendanceForm">
+                    <input type="hidden" name="action" value="update_attendance">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">उपस्थिति विवरणी (कक्षा 9-12)</h5>
+                            <div>
+                                <button type="submit" class="btn btn-light btn-sm"><i class="fas fa-save"></i> परिवर्तन सहेजें</button>
+                                <?php if ($has_status_column): ?>
+                                <button type="submit" name="action_forward" value="1" class="btn btn-success btn-sm"><i class="fas fa-paper-plane"></i> एडमिन को भेजें</button>
+                                <button type="submit" name="action_send_back" value="1" class="btn btn-warning btn-sm"><i class="fas fa-undo"></i> विद्यालय को भेजें</button>
+                                <?php endif; ?>
+                            </div>
                         </div>
-                        <div class="col-md-3">
-                            <label for="year" class="form-label">वर्ष</label>
-                            <input type="number" class="form-control" id="year" name="year" value="<?php echo $selected_year; ?>">
-                        </div>
-                        <div class="col-md-3">
-                            <label for="udise_code" class="form-label">UDISE कोड</label>
-                            <input type="text" class="form-control" id="udise_code" name="udise_code" value="<?php echo htmlspecialchars($udise_code); ?>">
-                        </div>
-                        <div class="col-md-3">
-                            <label for="per_page" class="form-label">प्रति पृष्ठ रिकॉर्ड</label>
-                            <select class="form-select" id="per_page" name="per_page">
-                                <option value="20" <?php echo ($per_page === 20) ? 'selected' : ''; ?>>20</option>
-                                <option value="50" <?php echo ($per_page === 50) ? 'selected' : ''; ?>>50</option>
-                                <option value="100" <?php echo ($per_page === 100) ? 'selected' : ''; ?>>100</option>
-                                <option value="500" <?php echo ($per_page === 500) ? 'selected' : ''; ?>>500</option>
-                                <option value="all" <?php echo ($per_page === 'all') ? 'selected' : ''; ?>>सभी</option>
-                            </select>
-                        </div>
-                        <div class="col-12">
-                            <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> खोजें</button>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>क्रमांक</th>
+                                            <?php if ($has_status_column): ?>
+                                            <th><input type="checkbox" id="selectAll"></th>
+                                            <?php endif; ?>
+                                            <th>विद्यालय</th>
+                                            <th>शिक्षक का नाम</th>
+                                            <th>PRAN/UAN</th>
+                                            <th>भुगतान हेतु दिवस</th>
+                                            <th>अनधिकृत अनुपस्थिति</th>
+                                            <th>अवकाश</th>
+                                            <th>अभियुक्ति</th>
+                                            <?php if ($has_status_column): ?>
+                                            <th>स्थिति</th>
+                                            <?php endif; ?>
+                                            <th>क्रियाएं</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php if (count($attendance_records) > 0): ?>
+                                            <?php $serial_number = ($page - 1) * $per_page + 1; ?>
+                                            <?php foreach ($attendance_records as $record): ?>
+                                            <tr>
+                                                <td><?php echo $serial_number; ?></td>
+                                                <?php if ($has_status_column): ?>
+                                                <td><input type="checkbox" name="teacher_ids[]" value="<?php echo $record['teacher_id']; ?>" class="teacher-checkbox"></td>
+                                                <?php endif; ?>
+                                                <td><?php echo $record['school_name']; ?><br><small><?php echo $record['udise_code']; ?></small></td>
+                                                <td><?php echo $record['name']; ?></td>
+                                                <td><?php echo $record['pran_no'] ?: $record['uan_no']; ?></td>
+                                                <td><input type="number" class="form-control attendance-input" name="attendance_data[<?php echo $record['teacher_id']; ?>][total_attendance_days]" value="<?php echo $record['total_attendance_days'] ?? 0; ?>"></td>
+                                                <td><input type="number" class="form-control attendance-input" name="attendance_data[<?php echo $record['teacher_id']; ?>][unauthorized_absence_days]" value="<?php echo $record['unauthorized_absence_days'] ?? 0; ?>"></td>
+                                                <td><input type="number" class="form-control attendance-input" name="attendance_data[<?php echo $record['teacher_id']; ?>][leave_days]" value="<?php echo $record['leave_days'] ?? 0; ?>"></td>
+                                                <td><textarea class="form-control" name="attendance_data[<?php echo $record['teacher_id']; ?>][remarks]" rows="1"><?php echo $record['remarks'] ?? ''; ?></textarea></td>
+                                                <?php if ($has_status_column): ?>
+                                                <td>
+                                                    <?php
+                                                    $status_text = 'Pending';
+                                                    $status_class = 'bg-secondary';
+                                                    if (isset($record['status'])) {
+                                                        if ($record['status'] === 'forwarded_to_admin') { $status_text = 'Forwarded'; $status_class = 'bg-success'; }
+                                                        elseif ($record['status'] === 'sent_back_to_school') { $status_text = 'Sent Back'; $status_class = 'bg-warning'; }
+                                                    }
+                                                    ?>
+                                                    <span class="badge <?php echo $status_class; ?> status-badge"><?php echo $status_text; ?></span>
+                                                </td>
+                                                <?php endif; ?>
+                                                <td>
+                                                    <button type="button" class="btn btn-sm btn-success" onclick="forwardToDistrict(<?php echo $record['teacher_id']; ?>, '<?php echo $selected_month; ?>', '<?php echo $selected_year; ?>')">
+                                                        <i class="fas fa-paper-plane"></i> जिले को भेजें
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            <?php $serial_number++; ?>
+                                            <?php endforeach; ?>
+                                        <?php else: ?>
+                                            <tr><td colspan="<?php echo $has_status_column ? '11' : '10'; ?>" class="text-center">कोई रिकॉर्ड नहीं मिला।</td></tr>
+                                        <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <!-- पेजिनेशन -->
+                            <?php if ($total_records > 0): ?>
+                            <div class="pagination-container">
+                                <div class="pagination-info">
+                                    <?php 
+                                    $start = ($page - 1) * $per_page + 1;
+                                    $end = min($page * $per_page, $total_records);
+                                    echo "दिखा रहे हैं $start से $end कुल $total_records रिकॉर्ड्स में से";
+                                    ?>
+                                </div>
+                                <nav>
+                                    <ul class="pagination mb-0">
+                                        <?php if ($page > 1): ?>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?month=<?php echo $selected_month; ?>&year=<?php echo $selected_year; ?>&udise_code=<?php echo $udise_code; ?>&pf_teacher_name=<?php echo $pf_teacher_name; ?>&pf_pran_uan=<?php echo $pf_pran_uan; ?>&per_page=<?php echo $per_page; ?>&page=<?php echo $page - 1; ?>" aria-label="Previous">
+                                                <span aria-hidden="true">&laquo;</span>
+                                            </a>
+                                        </li>
+                                        <?php endif; ?>
+                                        
+                                        <?php 
+                                        $max_visible_pages = 5;
+                                        $start_page = max(1, $page - floor($max_visible_pages / 2));
+                                        $end_page = min($total_pages, $start_page + $max_visible_pages - 1);
+                                        
+                                        if ($start_page > 1) {
+                                            echo '<li class="page-item"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&pf_teacher_name='.$pf_teacher_name.'&pf_pran_uan='.$pf_pran_uan.'&per_page='.$per_page.'&page=1">1</a></li>';
+                                            if ($start_page > 2) {
+                                                echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
+                                            }
+                                        }
+                                        
+                                        for ($i = $start_page; $i <= $end_page; $i++) {
+                                            $active_class = ($i == $page) ? 'active' : '';
+                                            echo '<li class="page-item '.$active_class.'"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&pf_teacher_name='.$pf_teacher_name.'&pf_pran_uan='.$pf_pran_uan.'&per_page='.$per_page.'&page='.$i.'">'.$i.'</a></li>';
+                                        }
+                                        
+                                        if ($end_page < $total_pages) {
+                                            if ($end_page < $total_pages - 1) {
+                                                echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
+                                            }
+                                            echo '<li class="page-item"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&pf_teacher_name='.$pf_teacher_name.'&pf_pran_uan='.$pf_pran_uan.'&per_page='.$per_page.'&page='.$total_pages.'">'.$total_pages.'</a></li>';
+                                        }
+                                        ?>
+                                        
+                                        <?php if ($page < $total_pages): ?>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?month=<?php echo $selected_month; ?>&year=<?php echo $selected_year; ?>&udise_code=<?php echo $udise_code; ?>&pf_teacher_name=<?php echo $pf_teacher_name; ?>&pf_pran_uan=<?php echo $pf_pran_uan; ?>&per_page=<?php echo $per_page; ?>&page=<?php echo $page + 1; ?>" aria-label="Next">
+                                                <span aria-hidden="true">&raquo;</span>
+                                            </a>
+                                        </li>
+                                        <?php endif; ?>
+                                    </ul>
+                                </nav>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </form>
             </div>
-        </div>
-
-        <!-- उपस्थिति रिकॉर्ड्स -->
-        <form method="post" action="" id="attendanceForm">
-            <input type="hidden" name="action" value="update_attendance">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">उपस्थिति विवरणी (कक्षा 1-8)</h5>
-                    <div>
-                        <button type="submit" class="btn btn-light btn-sm"><i class="fas fa-save"></i> परिवर्तन सहेजें</button>
-                        <?php if ($has_status_column): ?>
-                        <button type="submit" name="action_forward" value="1" class="btn btn-success btn-sm"><i class="fas fa-paper-plane"></i> एडमिन को भेजें</button>
-                        <button type="submit" name="action_send_back" value="1" class="btn btn-warning btn-sm"><i class="fas fa-undo"></i> विद्यालय को भेजें</button>
-                        <?php endif; ?>
+            
+            <!-- PF टैब -->
+            <div class="tab-pane fade" id="pf" role="tabpanel" aria-labelledby="pf-tab">
+                <!-- PF फिल्टर कार्ड -->
+                <div class="card">
+                    <div class="card-header"><h5 class="mb-0">पीएफ फॉर्म खोजें</h5></div>
+                    <div class="card-body">
+                        <form method="get" action="">
+                            <div class="row g-3">
+                                <div class="col-md-3">
+                                    <label for="udise_code" class="form-label">UDISE कोड</label>
+                                    <input type="text" class="form-control" id="udise_code" name="udise_code" value="<?php echo htmlspecialchars($udise_code); ?>">
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="pf_teacher_name" class="form-label">शिक्षक का नाम</label>
+                                    <input type="text" class="form-control" id="pf_teacher_name" name="pf_teacher_name" value="<?php echo htmlspecialchars($pf_teacher_name); ?>">
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="pf_pran_uan" class="form-label">PRAN/UAN नंबर</label>
+                                    <input type="text" class="form-control" id="pf_pran_uan" name="pf_pran_uan" value="<?php echo htmlspecialchars($pf_pran_uan); ?>">
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="per_page" class="form-label">प्रति पृष्ठ रिकॉर्ड</label>
+                                    <select class="form-select" id="per_page" name="per_page">
+                                        <option value="20" <?php echo ($per_page === 20) ? 'selected' : ''; ?>>20</option>
+                                        <option value="50" <?php echo ($per_page === 50) ? 'selected' : ''; ?>>50</option>
+                                        <option value="100" <?php echo ($per_page === 100) ? 'selected' : ''; ?>>100</option>
+                                        <option value="500" <?php echo ($per_page === 500) ? 'selected' : ''; ?>>500</option>
+                                        <option value="all" <?php echo ($per_page === 'all') ? 'selected' : ''; ?>>सभी</option>
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> खोजें</button>
+                                    <a href="ddo_dashboard.php" class="btn btn-secondary"><i class="fas fa-redo"></i> रीसेट</a>
+                                </div>
+                            </div>
+                        </form>
                     </div>
                 </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>क्रमांक</th>
-                                    <?php if ($has_status_column): ?>
-                                    <th><input type="checkbox" id="selectAll"></th>
-                                    <?php endif; ?>
-                                    <th>विद्यालय</th>
-                                    <th>शिक्षक का नाम</th>
-                                    <th>PRAN/UAN</th>
-                                    <th>भुगतान हेतु दिवस</th>
-                                    <th>अनधिकृत अनुपस्थिति</th>
-                                    <th>अवकाश</th>
-                                    <th>अभियुक्ति</th>
-                                    <?php if ($has_status_column): ?>
-                                    <th>स्थिति</th>
-                                    <?php endif; ?>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (count($attendance_records) > 0): ?>
-                                    <?php $serial_number = ($page - 1) * $per_page + 1; ?>
-                                    <?php foreach ($attendance_records as $record): ?>
-                                    <tr>
-                                        <td><?php echo $serial_number; ?></td>
-                                        <?php if ($has_status_column): ?>
-                                        <td><input type="checkbox" name="teacher_ids[]" value="<?php echo $record['teacher_id']; ?>" class="teacher-checkbox"></td>
-                                        <?php endif; ?>
-                                        <td><?php echo $record['school_name']; ?><br><small><?php echo $record['udise_code']; ?></small></td>
-                                        <td><?php echo $record['name']; ?></td>
-                                        <td><?php echo $record['pran_no'] ?: $record['uan_no']; ?></td>
-                                        <td><input type="number" class="form-control attendance-input" name="attendance_data[<?php echo $record['teacher_id']; ?>][total_attendance_days]" value="<?php echo $record['total_attendance_days'] ?? 0; ?>"></td>
-                                        <td><input type="number" class="form-control attendance-input" name="attendance_data[<?php echo $record['teacher_id']; ?>][unauthorized_absence_days]" value="<?php echo $record['unauthorized_absence_days'] ?? 0; ?>"></td>
-                                        <td><input type="number" class="form-control attendance-input" name="attendance_data[<?php echo $record['teacher_id']; ?>][leave_days]" value="<?php echo $record['leave_days'] ?? 0; ?>"></td>
-                                        <td><textarea class="form-control" name="attendance_data[<?php echo $record['teacher_id']; ?>][remarks]" rows="1"><?php echo $record['remarks'] ?? ''; ?></textarea></td>
-                                        <?php if ($has_status_column): ?>
-                                        <td>
-                                            <?php
-                                            $status_text = 'Pending';
-                                            $status_class = 'bg-secondary';
-                                            if (isset($record['status'])) {
-                                                if ($record['status'] === 'forwarded_to_admin') { $status_text = 'Forwarded'; $status_class = 'bg-success'; }
-                                                elseif ($record['status'] === 'sent_back_to_school') { $status_text = 'Sent Back'; $status_class = 'bg-warning'; }
-                                            }
-                                            ?>
-                                            <span class="badge <?php echo $status_class; ?> status-badge"><?php echo $status_text; ?></span>
-                                        </td>
-                                        <?php endif; ?>
-                                    </tr>
-                                    <?php $serial_number++; ?>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <tr><td colspan="<?php echo $has_status_column ? '10' : '9'; ?>" class="text-center">कोई रिकॉर्ड नहीं मिला।</td></tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <!-- पेजिनेशन -->
-                    <?php if ($total_records > 0): ?>
-                    <div class="pagination-container">
-                        <div class="pagination-info">
-                            <?php 
-                            $start = ($page - 1) * $per_page + 1;
-                            $end = min($page * $per_page, $total_records);
-                            echo "दिखा रहे हैं $start से $end कुल $total_records रिकॉर्ड्स में से";
-                            ?>
+
+                <!-- PF रिकॉर्ड्स -->
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">पीएफ फॉर्म (कक्षा 9-12)</h5>
+                        <div>
+                            <button type="button" class="btn btn-success btn-sm" id="forwardSelectedPF">
+                                <i class="fas fa-paper-plane"></i> चयनित को आगे भेजें
+                            </button>
                         </div>
-                        <nav>
-                            <ul class="pagination mb-0">
-                                <?php if ($page > 1): ?>
-                                <li class="page-item">
-                                    <a class="page-link" href="?month=<?php echo $selected_month; ?>&year=<?php echo $selected_year; ?>&udise_code=<?php echo $udise_code; ?>&per_page=<?php echo $per_page; ?>&page=<?php echo $page - 1; ?>" aria-label="Previous">
-                                        <span aria-hidden="true">&laquo;</span>
-                                    </a>
-                                </li>
-                                <?php endif; ?>
-                                
-                                <?php 
-                                $max_visible_pages = 5;
-                                $start_page = max(1, $page - floor($max_visible_pages / 2));
-                                $end_page = min($total_pages, $start_page + $max_visible_pages - 1);
-                                
-                                if ($start_page > 1) {
-                                    echo '<li class="page-item"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&per_page='.$per_page.'&page=1">1</a></li>';
-                                    if ($start_page > 2) {
-                                        echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
-                                    }
-                                }
-                                
-                                for ($i = $start_page; $i <= $end_page; $i++) {
-                                    $active_class = ($i == $page) ? 'active' : '';
-                                    echo '<li class="page-item '.$active_class.'"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&per_page='.$per_page.'&page='.$i.'">'.$i.'</a></li>';
-                                }
-                                
-                                if ($end_page < $total_pages) {
-                                    if ($end_page < $total_pages - 1) {
-                                        echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
-                                    }
-                                    echo '<li class="page-item"><a class="page-link" href="?month='.$selected_month.'&year='.$selected_year.'&udise_code='.$udise_code.'&per_page='.$per_page.'&page='.$total_pages.'">'.$total_pages.'</a></li>';
-                                }
-                                ?>
-                                
-                                <?php if ($page < $total_pages): ?>
-                                <li class="page-item">
-                                    <a class="page-link" href="?month=<?php echo $selected_month; ?>&year=<?php echo $selected_year; ?>&udise_code=<?php echo $udise_code; ?>&per_page=<?php echo $per_page; ?>&page=<?php echo $page + 1; ?>" aria-label="Next">
-                                        <span aria-hidden="true">&raquo;</span>
-                                    </a>
-                                </li>
-                                <?php endif; ?>
-                            </ul>
-                        </nav>
                     </div>
-                    <?php endif; ?>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th><input type="checkbox" id="selectAllPF"></th>
+                                        <th>विद्यालय</th>
+                                        <th>शिक्षक का नाम</th>
+                                        <th>PRAN/UAN</th>
+                                        <th>महीना</th>
+                                        <th>वर्ष</th>
+                                        <th>स्थिति</th>
+                                        <th>पीएफ फॉर्म</th>
+                                        <th>हस्ताक्षरित पीएफ</th>
+                                        <th>क्रियाएं</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (count($pf_records) > 0): ?>
+                                        <?php foreach ($pf_records as $record): ?>
+                                        <tr>
+                                            <td><input type="checkbox" name="pf_ids[]" value="<?php echo $record['id']; ?>" class="pf-checkbox"></td>
+                                            <td><?php echo $record['school_name']; ?><br><small><?php echo $record['udise_code']; ?></small></td>
+                                            <td><?php echo $record['teacher_name']; ?></td>
+                                            <td><?php echo $record['pran_no'] ?: $record['uan_no']; ?></td>
+                                            <td><?php echo $record['month']; ?></td>
+                                            <td><?php echo $record['year']; ?></td>
+                                            <td>
+                                                <?php
+                                                $status_text = 'Pending';
+                                                $status_class = 'bg-secondary';
+                                                if (isset($record['pf_status'])) {
+                                                    if ($record['pf_status'] === 'forwarded_to_district') { 
+                                                        $status_text = 'Forwarded'; 
+                                                        $status_class = 'bg-success'; 
+                                                    }
+                                                    elseif ($record['pf_status'] === 'sent_back_to_school') { 
+                                                        $status_text = 'Sent Back'; 
+                                                        $status_class = 'bg-warning'; 
+                                                    }
+                                                    elseif ($record['pf_status'] === 'submitted_by_school') { 
+                                                        $status_text = 'Submitted'; 
+                                                        $status_class = 'bg-info'; 
+                                                    }
+                                                }
+                                                ?>
+                                                <span class="badge <?php echo $status_class; ?> status-badge"><?php echo $status_text; ?></span>
+                                            </td>
+                                            <td>
+                                                <?php if (!empty($record['pf_file_path'])): ?>
+                                                    <a href="<?php echo $record['pf_file_path']; ?>" target="_blank" class="pdf-link">
+                                                        <i class="fas fa-file-pdf"></i> देखें
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="text-muted">उपलब्ध नहीं</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <?php if (!empty($record['signed_pf_file_path'])): ?>
+                                                    <a href="<?php echo $record['signed_pf_file_path']; ?>" target="_blank" class="pdf-link">
+                                                        <i class="fas fa-file-pdf"></i> देखें
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="text-muted">उपलब्ध नहीं</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <button type="button" class="btn btn-sm btn-primary" onclick="viewPFForm(<?php echo $record['id']; ?>)">
+                                                    <i class="fas fa-eye"></i> देखें
+                                                </button>
+                                                <button type="button" class="btn btn-sm btn-success" onclick="forwardPFDistrict(<?php echo $record['id']; ?>)">
+                                                    <i class="fas fa-paper-plane"></i> भेजें
+                                                </button>
+                                                <button type="button" class="btn btn-sm btn-warning" onclick="sendBackPFSchool(<?php echo $record['id']; ?>)">
+                                                    <i class="fas fa-undo"></i> वापस भेजें
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr><td colspan="10" class="text-center">कोई पीएफ रिकॉर्ड नहीं मिला।</td></tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </form>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
@@ -452,6 +647,130 @@ if ($per_page !== 'all') {
             document.querySelectorAll('.teacher-checkbox').forEach(cb => cb.checked = this.checked);
         });
         <?php endif; ?>
+        
+        // सभी PF चेकबॉक्स का चयन करें
+        document.getElementById('selectAllPF').addEventListener('change', function() {
+            document.querySelectorAll('.pf-checkbox').forEach(cb => cb.checked = this.checked);
+        });
+        
+        // जिले को भेजने के लिए फंक्शन
+        function forwardToDistrict(teacherId, month, year) {
+            if (confirm('क्या आप वाकई इस शिक्षक की उपस्थिति विवरणी को जिले को भेजना चाहते हैं?')) {
+                fetch('forward_to_district.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `teacher_id=${teacherId}&month=${month}&year=${year}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('उपस्थिति विवरणी सफलतापूर्वक जिले को भेजी गई!');
+                        location.reload();
+                    } else {
+                        alert('त्रुटि: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('त्रुटि: कृपया बाद में पुन: प्रयास करें।');
+                });
+            }
+        }
+        
+        // PF फॉर्म देखने के लिए
+        function viewPFForm(id) {
+            window.open('view_pf_form.php?id=' + id, '_blank');
+        }
+        
+        // PF जिले को भेजने के लिए
+        function forwardPFDistrict(id) {
+            if (confirm('क्या आप इस पीएफ फॉर्म को जिला अधिकारी को भेजना चाहते हैं?')) {
+                fetch('update_pf_status.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'action=forward_district&id=' + id
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('पीएफ फॉर्म सफलतापूर्वक जिला अधिकारी को भेजा गया!');
+                        location.reload();
+                    } else {
+                        alert('त्रुटि: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('त्रुटि: कृपया बाद में पुन: प्रयास करें।');
+                });
+            }
+        }
+        
+        // PF विद्यालय को वापस भेजने के लिए
+        function sendBackPFSchool(id) {
+            if (confirm('क्या आप इस पीएफ फॉर्म को विद्यालय को वापस भेजना चाहते हैं?')) {
+                fetch('update_pf_status.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'action=send_back_school&id=' + id
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('पीएफ फॉर्म सफलतापूर्वक विद्यालय को वापस भेजा गया!');
+                        location.reload();
+                    } else {
+                        alert('त्रुटि: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('त्रुटि: कृपया बाद में पुन: प्रयास करें।');
+                });
+            }
+        }
+        
+        // चयनित PF जिले को भेजने के लिए
+        document.getElementById('forwardSelectedPF').addEventListener('click', function() {
+            const selectedPFs = [];
+            document.querySelectorAll('.pf-checkbox:checked').forEach(cb => {
+                selectedPFs.push(cb.value);
+            });
+            
+            if (selectedPFs.length === 0) {
+                alert('कृपया कम से कम एक पीएफ फॉर्म का चयन करें।');
+                return;
+            }
+            
+            if (confirm('क्या आप चयनित पीएफ फॉर्म को जिला अधिकारी को भेजना चाहते हैं?')) {
+                fetch('update_pf_status.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'action=forward_multiple_district&ids=' + selectedPFs.join(',')
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('चयनित पीएफ फॉर्म सफलतापूर्वक जिला अधिकारी को भेजे गए!');
+                        location.reload();
+                    } else {
+                        alert('त्रुटि: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('त्रुटि: कृपया बाद में पुन: प्रयास करें।');
+                });
+            }
+        });
     </script>
 </body>
 </html>
