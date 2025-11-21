@@ -40,6 +40,9 @@ if ($stmt->rowCount() == 0) {
     $stmt->execute([$school_udise, $month_for_db]);
     $pf_list = $stmt;
 }
+
+// sidebar_template.php के लिए वर्तमान पेज परिभाषित करें
+ $current_page = 'pf_management';
 ?>
 <!DOCTYPE html>
 <html lang="hi">
@@ -194,26 +197,10 @@ if ($stmt->rowCount() == 0) {
 <body>
     <div class="alert-container" id="alertContainer"></div>
     <button class="mobile-menu-btn" id="mobileMenuBtn"><i class="fas fa-bars"></i></button>
-    <div class="sidebar" id="sidebar">
-        <div class="p-4 text-center">
-            <h4>बिहार शिक्षा विभाग</h4>
-            <p class="mb-0">विद्यालय डैशबोर्ड</p>
-        </div>
-        <hr class="text-white">
-        <ul class="nav flex-column">
-            <li class="nav-item"><a class="nav-link" href="school_dashboard.php"><i class="fas fa-tachometer-alt"></i> डैशबोर्ड</a></li>
-            <li class="nav-item"><a class="nav-link" href="school_profile.php"><i class="fas fa-school"></i> विद्यालय प्रोफाइल</a></li>
-            <li class="nav-item"><a class="nav-link" href="enrollment.php"><i class="fas fa-user-graduate"></i> नामांकन</a></li>
-            <li class="nav-item"><a class="nav-link" href="teachers.php"><i class="fas fa-chalkboard-teacher"></i> शिक्षक विवरण</a></li>
-            <li class="nav-item"><a class="nav-link" href="attendance.php"><i class="fas fa-calendar-check"></i> उपस्थिति विवरणी</a></li>
-            <li class="nav-item"><a class="nav-link active" href="pf_management.php"><i class="fas fa-file-pdf"></i> पीडीएफ प्रबंधन</a></li>
-            <li class="nav-item"><a class="nav-link" href="salary_status.php"><i class="fas fa-money-check-alt"></i> वेतन स्थिति</a></li>
-            <li class="nav-item"><a class="nav-link" href="salary_complaint.php"><i class="fas fa-exclamation-triangle"></i> वेतन शिकायत</a></li>
-            <li class="nav-item"><a class="nav-link" href="letters.php"><i class="fas fa-envelope"></i> पत्र</a></li>
-            <li class="nav-item"><a class="nav-link" href="notices.php"><i class="fas fa-bullhorn"></i> नोटिस</a></li>
-            <li class="nav-item"><a class="nav-link" href="logout.php"><i class="fas fa-sign-out-alt"></i> लॉग आउट</a></li>
-        </ul>
-    </div>
+    
+    <!-- साइडबार टेम्पलेट को शामिल करें -->
+    <?php include 'sidebar_template.php'; ?>
+    
     <div class="main-content">
         <nav class="navbar navbar-expand-lg navbar-light mb-4">
             <div class="container-fluid">

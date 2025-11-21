@@ -9,14 +9,21 @@ checkUserType('school');
 
 // फोटो कंप्रेशन फंक्शन
 function compressImage($source, $destination, $quality) {
+    // GD लाइब्रेरी उपलब्ध है या नहीं जांचें
+    if (!extension_loaded('gd')) {
+        // यदि GD लाइब्रेरी उपलब्ध नहीं है, तो सीधे फाइल कॉपी करें
+        return copy($source, $destination);
+    }
+    
     $info = getimagesize($source);
     if ($info['mime'] == 'image/jpeg') {
         $image = imagecreatefromjpeg($source);
     } elseif ($info['mime'] == 'image/png') {
         $image = imagecreatefrompng($source);
     } else {
-        return false; // Unsupported format
+        return false; // असमर्थित प्रारूप
     }
+    
     imagejpeg($image, $destination, $quality);
     imagedestroy($image);
     return true;
@@ -60,6 +67,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $new_file_name = 'school_' . $school_id . '_' . $photo_type . ($sequence_number ? '_' . $sequence_number : '') . '_' . uniqid() . '.jpg';
             $dest_path = $upload_dir . $new_file_name;
 
+            // अपलोड डायरेक्टरी की जांच करें और बनाएं
+            if (!file_exists($upload_dir)) {
+                mkdir($upload_dir, 0755, true);
+            }
+
             // फोटो कंप्रेस करें और मूव करें
             if (compressImage($file_tmp_path, $dest_path, 75)) {
                 // डेटाबेस में एंट्री करें
@@ -83,7 +95,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  $stmt->execute([$school_id]);
  $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 foreach($results as $photo) {
-    $existing_photos[$photo['photo_type']][$photo['sequence_number']] = $photo['photo_path'];
+    // sequence_number null हो सकता है, इसलिए इसे 0 के रूप में सेट करें
+    $seq = $photo['sequence_number'] ?? 0;
+    $existing_photos[$photo['photo_type']][$seq] = $photo['photo_path'];
 }
 ?>
 <!DOCTYPE html>
@@ -120,6 +134,8 @@ foreach($results as $photo) {
         .alert-container { position: fixed; top: 20px; right: 20px; z-index: 1050; max-width: 350px; }
         .uploaded-photo { max-width: 100%; height: 200px; object-fit: cover; border-radius: 10px; margin-top: 15px; border: 2px solid var(--primary-color); }
         .mobile-menu-btn { display: none; position: fixed; top: 20px; left: 20px; z-index: 101; background: var(--primary-color); color: white; border: none; border-radius: 50%; width: 50px; height: 50px; font-size: 1.5rem; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        
+        /* मोबाइल रेस्पॉन्सिव स्टाइल */
         @media (max-width: 992px) {
             .sidebar { transform: translateX(-100%); }
             .sidebar.active { transform: translateX(0); }
@@ -133,27 +149,8 @@ foreach($results as $photo) {
     <div class="alert-container" id="alertContainer"></div>
     <button class="mobile-menu-btn" id="mobileMenuBtn"><i class="fas fa-bars"></i></button>
     
-    <div class="sidebar" id="sidebar">
-        <div class="p-4 text-center">
-            <h4>बिहार शिक्षा विभाग</h4>
-            <p class="mb-0">विद्यालय डैशबोर्ड</p>
-        </div>
-        <hr class="text-white">
-        <ul class="nav flex-column">
-            <li class="nav-item"><a class="nav-link" href="school_dashboard.php"><i class="fas fa-tachometer-alt"></i> डैशबोर्ड</a></li>
-            <li class="nav-item"><a class="nav-link" href="school_profile.php"><i class="fas fa-school"></i> विद्यालय प्रोफाइल</a></li>
-            <li class="nav-item"><a class="nav-link active" href="upload_photos.php"><i class="fas fa-camera"></i> फोटो अपलोड करें</a></li>
-            <li class="nav-item"><a class="nav-link" href="enrollment.php"><i class="fas fa-user-graduate"></i> नामांकन</a></li>
-            <li class="nav-item"><a class="nav-link" href="teachers.php"><i class="fas fa-chalkboard-teacher"></i> शिक्षक विवरण</a></li>
-            <li class="nav-item"><a class="nav-link" href="attendance.php"><i class="fas fa-calendar-check"></i> उपस्थिति विवरणी</a></li>
-            <li class="nav-item"><a class="nav-link" href="pf_management.php"><i class="fas fa-file-pdf"></i> पीडीएफ प्रबंधन</a></li>
-            <li class="nav-item"><a class="nav-link" href="salary_status.php"><i class="fas fa-money-check-alt"></i> वेतन स्थिति</a></li>
-            <li class="nav-item"><a class="nav-link" href="salary_complaint.php"><i class="fas fa-exclamation-triangle"></i> वेतन शिकायत</a></li>
-            <li class="nav-item"><a class="nav-link" href="letters.php"><i class="fas fa-envelope"></i> पत्र</a></li>
-            <li class="nav-item"><a class="nav-link" href="notices.php"><i class="fas fa-bullhorn"></i> नोटिस</a></li>
-            <li class="nav-item"><a class="nav-link" href="logout.php"><i class="fas fa-sign-out-alt"></i> लॉग आउट</a></li>
-        </ul>
-    </div>
+    <!-- साइडबार टेम्पलेट शामिल करें -->
+    <?php require_once 'sidebar_template.php'; ?>
 
     <div class="main-content">
         <nav class="navbar navbar-expand-lg navbar-light">
@@ -180,19 +177,36 @@ foreach($results as $photo) {
         <div class="card">
             <div class="card-header"><i class="fas fa-school me-2"></i>विद्यालय का फोटो (आगे से जिसमें गेट स्पष्ट नजर आता हो)</div>
             <div class="card-body">
-                <form action="upload_photos.php" method="post" enctype="multipart/form-data">
+                <?php if (isset($existing_photos['school_gate'][0])): ?>
+                    <img src="<?php echo $existing_photos['school_gate'][0]; ?>" class="uploaded-photo" alt="School Gate">
+                    <div class="mt-3">
+                        <a href="<?php echo $existing_photos['school_gate'][0]; ?>" target="_blank" class="btn btn-info btn-sm me-2"><i class="fas fa-eye"></i> फोटो देखें</a>
+                        <button class="btn btn-warning btn-sm" onclick="showReuploadForm('school_gate', 0)"><i class="fas fa-sync-alt"></i> फोटो बदलें</button>
+                    </div>
+                <?php else: ?>
+                    <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="form_school_gate_0">
+                        <input type="hidden" name="photo_type" value="school_gate">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <input type="file" class="form-control" name="photo" accept="image/*" required>
+                            </div>
+                            <div class="col-md-6">
+                                <button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button>
+                            </div>
+                        </div>
+                    </form>
+                <?php endif; ?>
+                <!-- री-अपलोड फॉर्म (शुरू में छिपा हुआ) -->
+                <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="reupload_form_school_gate_0" style="display: none;" class="mt-3">
                     <input type="hidden" name="photo_type" value="school_gate">
                     <div class="row">
                         <div class="col-md-6">
                             <input type="file" class="form-control" name="photo" accept="image/*" required>
                         </div>
                         <div class="col-md-6">
-                            <button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button>
+                            <button type="submit" class="btn btn-primary w-100">नई फोटो अपलोड करें</button>
                         </div>
                     </div>
-                    <?php if (isset($existing_photos['school_gate'][0])): ?>
-                        <img src="<?php echo $existing_photos['school_gate'][0]; ?>" class="uploaded-photo" alt="School Gate">
-                    <?php endif; ?>
                 </form>
             </div>
         </div>
@@ -201,15 +215,27 @@ foreach($results as $photo) {
         <div class="card">
             <div class="card-header"><i class="fas fa-tree me-2"></i>विद्यालय के ग्राउंड का फोटो</div>
             <div class="card-body">
-                <form action="upload_photos.php" method="post" enctype="multipart/form-data">
+                <?php if (isset($existing_photos['ground'][0])): ?>
+                    <img src="<?php echo $existing_photos['ground'][0]; ?>" class="uploaded-photo" alt="School Ground">
+                    <div class="mt-3">
+                        <a href="<?php echo $existing_photos['ground'][0]; ?>" target="_blank" class="btn btn-info btn-sm me-2"><i class="fas fa-eye"></i> फोटो देखें</a>
+                        <button class="btn btn-warning btn-sm" onclick="showReuploadForm('ground', 0)"><i class="fas fa-sync-alt"></i> फोटो बदलें</button>
+                    </div>
+                <?php else: ?>
+                    <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="form_ground_0">
+                        <input type="hidden" name="photo_type" value="ground">
+                        <div class="row">
+                            <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
+                            <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button></div>
+                        </div>
+                    </form>
+                <?php endif; ?>
+                <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="reupload_form_ground_0" style="display: none;" class="mt-3">
                     <input type="hidden" name="photo_type" value="ground">
                     <div class="row">
                         <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
-                        <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button></div>
+                        <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">नई फोटो अपलोड करें</button></div>
                     </div>
-                    <?php if (isset($existing_photos['ground'][0])): ?>
-                        <img src="<?php echo $existing_photos['ground'][0]; ?>" class="uploaded-photo" alt="School Ground">
-                    <?php endif; ?>
                 </form>
             </div>
         </div>
@@ -220,21 +246,34 @@ foreach($results as $photo) {
             <div class="card-body">
                 <div id="classroom-container">
                     <?php
-                    $classroom_count = isset($existing_photos['classroom']) ? count($existing_photos['classroom']) : 1;
+                    $classroom_count = isset($existing_photos['classroom']) ? max(array_keys($existing_photos['classroom'])) : 1;
                     for ($i = 1; $i <= $classroom_count; $i++):
                     ?>
                     <div class="classroom-item mb-3" data-index="<?php echo $i; ?>">
                         <h5>कक्षा नंबर-<?php echo $i; ?></h5>
-                        <form action="upload_photos.php" method="post" enctype="multipart/form-data">
+                        <?php if (isset($existing_photos['classroom'][$i])): ?>
+                            <img src="<?php echo $existing_photos['classroom'][$i]; ?>" class="uploaded-photo" alt="Classroom <?php echo $i; ?>">
+                            <div class="mt-3">
+                                <a href="<?php echo $existing_photos['classroom'][$i]; ?>" target="_blank" class="btn btn-info btn-sm me-2"><i class="fas fa-eye"></i> फोटो देखें</a>
+                                <button class="btn btn-warning btn-sm" onclick="showReuploadForm('classroom', <?php echo $i; ?>)"><i class="fas fa-sync-alt"></i> फोटो बदलें</button>
+                            </div>
+                        <?php else: ?>
+                            <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="form_classroom_<?php echo $i; ?>">
+                                <input type="hidden" name="photo_type" value="classroom">
+                                <input type="hidden" name="sequence_number" value="<?php echo $i; ?>">
+                                <div class="row">
+                                    <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
+                                    <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button></div>
+                                </div>
+                            </form>
+                        <?php endif; ?>
+                        <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="reupload_form_classroom_<?php echo $i; ?>" style="display: none;" class="mt-3">
                             <input type="hidden" name="photo_type" value="classroom">
                             <input type="hidden" name="sequence_number" value="<?php echo $i; ?>">
                             <div class="row">
                                 <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
-                                <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button></div>
+                                <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">नई फोटो अपलोड करें</button></div>
                             </div>
-                            <?php if (isset($existing_photos['classroom'][$i])): ?>
-                                <img src="<?php echo $existing_photos['classroom'][$i]; ?>" class="uploaded-photo" alt="Classroom <?php echo $i; ?>">
-                            <?php endif; ?>
                         </form>
                     </div>
                     <?php endfor; ?>
@@ -247,15 +286,27 @@ foreach($results as $photo) {
         <div class="card">
             <div class="card-header"><i class="fas fa-desktop me-2"></i>आईसीटी लैब रूम का फोटो</div>
             <div class="card-body">
-                <form action="upload_photos.php" method="post" enctype="multipart/form-data">
+                <?php if (isset($existing_photos['ict_lab'][0])): ?>
+                    <img src="<?php echo $existing_photos['ict_lab'][0]; ?>" class="uploaded-photo" alt="ICT Lab">
+                    <div class="mt-3">
+                        <a href="<?php echo $existing_photos['ict_lab'][0]; ?>" target="_blank" class="btn btn-info btn-sm me-2"><i class="fas fa-eye"></i> फोटो देखें</a>
+                        <button class="btn btn-warning btn-sm" onclick="showReuploadForm('ict_lab', 0)"><i class="fas fa-sync-alt"></i> फोटो बदलें</button>
+                    </div>
+                <?php else: ?>
+                    <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="form_ict_lab_0">
+                        <input type="hidden" name="photo_type" value="ict_lab">
+                        <div class="row">
+                            <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
+                            <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button></div>
+                        </div>
+                    </form>
+                <?php endif; ?>
+                <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="reupload_form_ict_lab_0" style="display: none;" class="mt-3">
                     <input type="hidden" name="photo_type" value="ict_lab">
                     <div class="row">
                         <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
-                        <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button></div>
+                        <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">नई फोटो अपलोड करें</button></div>
                     </div>
-                    <?php if (isset($existing_photos['ict_lab'][0])): ?>
-                        <img src="<?php echo $existing_photos['ict_lab'][0]; ?>" class="uploaded-photo" alt="ICT Lab">
-                    <?php endif; ?>
                 </form>
             </div>
         </div>
@@ -264,15 +315,27 @@ foreach($results as $photo) {
         <div class="card">
             <div class="card-header"><i class="fas fa-chalkboard me-2"></i>स्मार्ट क्लास रूम का फोटो</div>
             <div class="card-body">
-                <form action="upload_photos.php" method="post" enctype="multipart/form-data">
+                <?php if (isset($existing_photos['smart_class'][0])): ?>
+                    <img src="<?php echo $existing_photos['smart_class'][0]; ?>" class="uploaded-photo" alt="Smart Class">
+                    <div class="mt-3">
+                        <a href="<?php echo $existing_photos['smart_class'][0]; ?>" target="_blank" class="btn btn-info btn-sm me-2"><i class="fas fa-eye"></i> फोटो देखें</a>
+                        <button class="btn btn-warning btn-sm" onclick="showReuploadForm('smart_class', 0)"><i class="fas fa-sync-alt"></i> फोटो बदलें</button>
+                    </div>
+                <?php else: ?>
+                    <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="form_smart_class_0">
+                        <input type="hidden" name="photo_type" value="smart_class">
+                        <div class="row">
+                            <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
+                            <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button></div>
+                        </div>
+                    </form>
+                <?php endif; ?>
+                <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="reupload_form_smart_class_0" style="display: none;" class="mt-3">
                     <input type="hidden" name="photo_type" value="smart_class">
                     <div class="row">
                         <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
-                        <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button></div>
+                        <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">नई फोटो अपलोड करें</button></div>
                     </div>
-                    <?php if (isset($existing_photos['smart_class'][0])): ?>
-                        <img src="<?php echo $existing_photos['smart_class'][0]; ?>" class="uploaded-photo" alt="Smart Class">
-                    <?php endif; ?>
                 </form>
             </div>
         </div>
@@ -283,21 +346,34 @@ foreach($results as $photo) {
             <div class="card-body">
                 <div id="toilet-container">
                     <?php
-                    $toilet_count = isset($existing_photos['toilet']) ? count($existing_photos['toilet']) : 1;
+                    $toilet_count = isset($existing_photos['toilet']) ? max(array_keys($existing_photos['toilet'])) : 1;
                     for ($i = 1; $i <= $toilet_count; $i++):
                     ?>
                     <div class="toilet-item mb-3" data-index="<?php echo $i; ?>">
                         <h5>शौचालय नंबर-<?php echo $i; ?></h5>
-                        <form action="upload_photos.php" method="post" enctype="multipart/form-data">
+                        <?php if (isset($existing_photos['toilet'][$i])): ?>
+                            <img src="<?php echo $existing_photos['toilet'][$i]; ?>" class="uploaded-photo" alt="Toilet <?php echo $i; ?>">
+                            <div class="mt-3">
+                                <a href="<?php echo $existing_photos['toilet'][$i]; ?>" target="_blank" class="btn btn-info btn-sm me-2"><i class="fas fa-eye"></i> फोटो देखें</a>
+                                <button class="btn btn-warning btn-sm" onclick="showReuploadForm('toilet', <?php echo $i; ?>)"><i class="fas fa-sync-alt"></i> फोटो बदलें</button>
+                            </div>
+                        <?php else: ?>
+                            <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="form_toilet_<?php echo $i; ?>">
+                                <input type="hidden" name="photo_type" value="toilet">
+                                <input type="hidden" name="sequence_number" value="<?php echo $i; ?>">
+                                <div class="row">
+                                    <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
+                                    <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button></div>
+                                </div>
+                            </form>
+                        <?php endif; ?>
+                        <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="reupload_form_toilet_<?php echo $i; ?>" style="display: none;" class="mt-3">
                             <input type="hidden" name="photo_type" value="toilet">
                             <input type="hidden" name="sequence_number" value="<?php echo $i; ?>">
                             <div class="row">
                                 <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
-                                <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button></div>
+                                <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">नई फोटो अपलोड करें</button></div>
                             </div>
-                            <?php if (isset($existing_photos['toilet'][$i])): ?>
-                                <img src="<?php echo $existing_photos['toilet'][$i]; ?>" class="uploaded-photo" alt="Toilet <?php echo $i; ?>">
-                            <?php endif; ?>
                         </form>
                     </div>
                     <?php endfor; ?>
@@ -313,6 +389,23 @@ foreach($results as $photo) {
             document.getElementById('sidebar').classList.toggle('active');
         });
 
+        // फोटो बदलने के लिए फॉर्म दिखाने वाला फंक्शन
+        function showReuploadForm(type, seq) {
+            // मूल फॉर्म छिपाएं
+            const originalFormId = 'form_' + type + '_' + seq;
+            const originalForm = document.getElementById(originalFormId);
+            if (originalForm) {
+                originalForm.style.display = 'none';
+            }
+
+            // री-अपलोड फॉर्म दिखाएं
+            const reuploadFormId = 'reupload_form_' + type + '_' + seq;
+            const reuploadForm = document.getElementById(reuploadFormId);
+            if (reuploadForm) {
+                reuploadForm.style.display = 'block';
+            }
+        }
+
         let classroomIndex = <?php echo $classroom_count; ?>;
         function addMoreClassroom() {
             classroomIndex++;
@@ -322,12 +415,20 @@ foreach($results as $photo) {
             newItem.dataset.index = classroomIndex;
             newItem.innerHTML = `
                 <h5>कक्षा नंबर-${classroomIndex}</h5>
-                <form action="upload_photos.php" method="post" enctype="multipart/form-data">
+                <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="form_classroom_${classroomIndex}">
                     <input type="hidden" name="photo_type" value="classroom">
                     <input type="hidden" name="sequence_number" value="${classroomIndex}">
                     <div class="row">
                         <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
                         <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button></div>
+                    </div>
+                </form>
+                <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="reupload_form_classroom_${classroomIndex}" style="display: none;" class="mt-3">
+                    <input type="hidden" name="photo_type" value="classroom">
+                    <input type="hidden" name="sequence_number" value="${classroomIndex}">
+                    <div class="row">
+                        <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
+                        <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">नई फोटो अपलोड करें</button></div>
                     </div>
                 </form>
             `;
@@ -343,12 +444,20 @@ foreach($results as $photo) {
             newItem.dataset.index = toiletIndex;
             newItem.innerHTML = `
                 <h5>शौचालय नंबर-${toiletIndex}</h5>
-                <form action="upload_photos.php" method="post" enctype="multipart/form-data">
+                <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="form_toilet_${toiletIndex}">
                     <input type="hidden" name="photo_type" value="toilet">
                     <input type="hidden" name="sequence_number" value="${toiletIndex}">
                     <div class="row">
                         <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
                         <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">फोटो अपलोड करें</button></div>
+                    </div>
+                </form>
+                <form action="upload_photos.php" method="post" enctype="multipart/form-data" id="reupload_form_toilet_${toiletIndex}" style="display: none;" class="mt-3">
+                    <input type="hidden" name="photo_type" value="toilet">
+                    <input type="hidden" name="sequence_number" value="${toiletIndex}">
+                    <div class="row">
+                        <div class="col-md-6"><input type="file" class="form-control" name="photo" accept="image/*" required></div>
+                        <div class="col-md-6"><button type="submit" class="btn btn-primary w-100">नई फोटो अपलोड करें</button></div>
                     </div>
                 </form>
             `;

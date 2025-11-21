@@ -141,6 +141,7 @@ if (!$enrollment_data) {
             width: 250px;
             z-index: 100;
             transition: all 0.3s ease;
+            overflow-y: auto;
         }
         
         .sidebar .nav-link {
@@ -148,6 +149,7 @@ if (!$enrollment_data) {
             padding: 15px 20px;
             border-radius: 0;
             transition: all 0.3s ease;
+            font-size: 0.95rem;
         }
         
         .sidebar .nav-link:hover, .sidebar .nav-link.active {
@@ -157,29 +159,28 @@ if (!$enrollment_data) {
         
         .sidebar .nav-link i {
             margin-right: 10px;
+            width: 20px;
+            text-align: center;
         }
         
         .main-content {
             margin-left: 250px;
             padding: 20px;
+            transition: all 0.3s ease;
         }
         
         .navbar {
             background: white;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 10px;
+            margin-bottom: 20px;
         }
         
         .card {
             border: none;
             border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            transition: all 0.3s ease;
-            margin-bottom: 20px;
-        }
-        
-        .card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 30px rgba(0,0,0,0.15);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            margin-bottom: 25px;
         }
         
         .card-header {
@@ -187,8 +188,13 @@ if (!$enrollment_data) {
             color: white;
             font-weight: 600;
             border-radius: 15px 15px 0 0 !important;
+            padding: 15px 20px;
         }
         
+        .card-body {
+            padding: 20px;
+        }
+
         .btn-primary {
             background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
             border: none;
@@ -203,17 +209,61 @@ if (!$enrollment_data) {
             box-shadow: 0 10px 20px rgba(106, 27, 154, 0.3);
         }
         
-        .form-control {
+        .table {
             border-radius: 10px;
-            border: 1px solid #ddd;
-            padding: 8px 12px;
-            text-align: center;
+            overflow: hidden;
+        }
+        
+        .thead {
+            background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
+            color: white;
+        }
+        
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             font-weight: 600;
         }
         
-        .form-control:focus {
+        .mobile-menu-btn {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 101;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 1.5rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        
+        .form-control, .form-select {
+            border-radius: 10px;
+            border: 1px solid #ddd;
+            transition: all 0.3s ease;
+        }
+        
+        .form-control:focus, .form-select:focus {
             border-color: var(--primary-color);
-            box-shadow: 0 0 0 0.25rem rgba(106, 27, 154, 0.25);
+            box-shadow: 0 0 0 0.2rem rgba(106, 27, 154, 0.25);
+        }
+        
+        .alert-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1050;
+            max-width: 350px;
         }
         
         .enrollment-table {
@@ -256,33 +306,6 @@ if (!$enrollment_data) {
             text-align: center;
         }
         
-        .user-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-        }
-        
-        .mobile-menu-btn {
-            display: none;
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            z-index: 101;
-            background: var(--primary-color);
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            font-size: 1.5rem;
-        }
-        
         .enrollment-summary {
             background-color: #f8f9fa;
             border-radius: 10px;
@@ -305,120 +328,74 @@ if (!$enrollment_data) {
             border-radius: 5px;
             margin-top: 5px;
         }
-        
+
+        /* मोबाइल रेस्पॉन्सिव स्टाइल */
         @media (max-width: 992px) {
-            .sidebar {
-                transform: translateX(-100%);
-            }
+            .sidebar { transform: translateX(-100%); }
+            .sidebar.active { transform: translateX(0); }
+            .main-content { margin-left: 0; padding: 15px; }
+            .mobile-menu-btn { display: flex; align-items: center; justify-content: center; }
+            .navbar { margin-top: 70px; }
+        }
+
+        @media (max-width: 768px) {
+            .main-content { padding: 10px; }
+            .card-body { padding: 15px; }
+            .card-header { padding: 12px 15px; font-size: 1rem; }
+            .btn-primary { padding: 8px 20px; font-size: 0.9rem; }
+            .navbar h4 { font-size: 1.2rem; }
+            .user-avatar { width: 35px; height: 35px; font-size: 0.9rem; }
+            .form-label { font-size: 0.9rem; }
             
-            .sidebar.active {
-                transform: translateX(0);
-            }
-            
-            .main-content {
-                margin-left: 0;
-            }
-            
-            .mobile-menu-btn {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            
+            /* टेबल के लिए बेहतर मोबाइल व्यू */
             .enrollment-table {
-                font-size: 0.8rem;
+                font-size: 0.85rem;
             }
             
             .enrollment-table th, .enrollment-table td {
                 padding: 6px 4px;
             }
+            
+            /* फॉर्म एलिमेंट्स के लिए बेहतर स्पेसिंग */
+            .form-control {
+                padding: 6px 8px;
+                font-size: 0.9rem;
+            }
+            
+            /* सारांश अनुभाग के लिए बेहतर स्पेसिंग */
+            .enrollment-summary {
+                padding: 10px;
+            }
+            
+            .summary-item {
+                padding: 6px 0;
+                font-size: 0.9rem;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .card-header { font-size: 0.9rem; }
+            .form-label { font-size: 0.85rem; }
+            .form-control, .form-select { font-size: 0.9rem; }
+            .btn-primary { padding: 6px 15px; font-size: 0.85rem; }
+            .enrollment-table { font-size: 0.8rem; }
+            .class-group-title { font-size: 0.9rem; padding: 8px 10px; }
         }
     </style>
 </head>
 <body>
-    <!-- मोबाइल मेन्यू बटन -->
-    <button class="mobile-menu-btn" id="mobileMenuBtn">
-        <i class="fas fa-bars"></i>
-    </button>
+    <div class="alert-container" id="alertContainer"></div>
+    <button class="mobile-menu-btn" id="mobileMenuBtn"><i class="fas fa-bars"></i></button>
     
-    <!-- साइडबार -->
-    <div class="sidebar" id="sidebar">
-        <div class="p-4 text-center">
-            <h4>बिहार शिक्षा विभाग</h4>
-            <p class="mb-0">विद्यालय डैशबोर्ड</p>
-        </div>
-        
-        <hr class="text-white">
-        
-        <ul class="nav flex-column">
-            <li class="nav-item">
-                <a class="nav-link" href="school_dashboard.php">
-                    <i class="fas fa-tachometer-alt"></i> डैशबोर्ड
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="school_profile.php">
-                    <i class="fas fa-school"></i> विद्यालय प्रोफाइल
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link active" href="enrollment.php">
-                    <i class="fas fa-user-graduate"></i> नामांकन
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="teachers.php">
-                    <i class="fas fa-chalkboard-teacher"></i> शिक्षक विवरण
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="attendance.php">
-                    <i class="fas fa-calendar-check"></i> उपस्थिति विवरणी
-					 </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="pf_management.php">
-                    <i class="fas fa-file-pdf"></i> पीडीएफ प्रबंधन
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="salary_status.php">
-                    <i class="fas fa-money-check-alt"></i> वेतन स्थिति
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="salary_complaint.php">
-                    <i class="fas fa-exclamation-triangle"></i> वेतन शिकायत
-                </a>
-			</li>
-            <li class="nav-item">
-                <a class="nav-link" href="letters.php">
-                    <i class="fas fa-envelope"></i> पत्र
-                </a>
-			</li>
-            <li class="nav-item">
-                <a class="nav-link" href="notices.php">
-                    <i class="fas fa-bullhorn"></i> नोटिस
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="logout.php">
-                    <i class="fas fa-sign-out-alt"></i> लॉग आउट
-                </a>
-            </li>
-        </ul>
-    </div>
-    
-    <!-- मुख्य सामग्री -->
+    <!-- साइडबार टेम्पलेट शामिल करें -->
+    <?php require_once 'sidebar_template.php'; ?>
+
     <div class="main-content">
-        <!-- नेविगेशन बार -->
-        <nav class="navbar navbar-expand-lg navbar-light mb-4">
+        <nav class="navbar navbar-expand-lg navbar-light">
             <div class="container-fluid">
                 <h4 class="mb-0">नामांकन</h4>
                 <div class="d-flex align-items-center">
-                    <div class="user-avatar me-2">
-                        <?php echo strtoupper(substr($_SESSION['name'], 0, 2)); ?>
-                    </div>
+                    <div class="user-avatar me-2"><?php echo strtoupper(substr($_SESSION['name'], 0, 2)); ?></div>
                     <div>
                         <h6 class="mb-0"><?php echo $_SESSION['name']; ?></h6>
                         <small class="text-muted">विद्यालय</small>
@@ -429,28 +406,29 @@ if (!$enrollment_data) {
         
         <!-- सफलता/त्रुटि संदेश -->
         <?php if (isset($success_message)): ?>
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            <?php echo $success_message; ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <?php echo $success_message; ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
         <?php endif; ?>
         
         <?php if (isset($error_message)): ?>
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            <?php echo $error_message; ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <?php echo $error_message; ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
         <?php endif; ?>
         
         <!-- नामांकन फॉर्म -->
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0">माह: <?php echo $current_month . ' ' . $current_year; ?> के लिए नामांकन विवरण</h5>
+                <i class="fas fa-user-graduate me-2"></i>
+                माह: <?php echo $current_month . ' ' . $current_year; ?> के लिए नामांकन विवरण
             </div>
             <div class="card-body">
                 <div class="mb-4">
                     <h5>विद्यालय: <?php echo $school['name']; ?></h5>
-                    <p class="mb-0">श्रेणी: कक्षा 1-12</p>
+                    <p class="mb-0">श्रेणी: <?php echo $school['school_category']; ?></p>
                 </div>
                 
                 <form method="post" action="" id="enrollmentForm">
@@ -591,7 +569,7 @@ if (!$enrollment_data) {
         document.getElementById('mobileMenuBtn').addEventListener('click', function() {
             document.getElementById('sidebar').classList.toggle('active');
         });
-        
+
         // विंडो आकार बदलने पर साइडबार की जांच करें
         window.addEventListener('resize', function() {
             if (window.innerWidth > 992) {

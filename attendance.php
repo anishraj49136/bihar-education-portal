@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                    (SELECT COUNT(*) FROM eshikshakosh_data WHERE teacher_code = t.eshikshakosh_id AND month = ? AND in_time IS NOT NULL) as in_time_count,
                                    (SELECT COUNT(*) FROM eshikshakosh_data WHERE teacher_code = t.eshikshakosh_id AND month = ? AND out_time IS NOT NULL) as out_time_count
                                    FROM teachers t WHERE t.id = ?");
-            $stmt->execute([$current_month, $current_month, $teacher_id]);
+            $stmt->execute([$current_month, $current_year, $teacher_id]);
             $e_shiksha_data = $stmt->fetch(PDO::FETCH_ASSOC);
 
             // अपडेट या इन्सर्ट क्वेरी
@@ -69,13 +69,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// महीना लॉक करने की प्रक्रिया - अपडेटेड (FPDF के बिना)
+// महीना लॉक करने की प्रक्रिया
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'lock_month' && !$is_month_locked) {
     
-    // किसी भी अप्रत्याशित आउटपुट को साफ़ करें
     if (ob_get_length()) ob_clean();
     header('Content-Type: application/json');
-    error_reporting(0); // PHP Warnings को JSON में आने से रोकें
+    error_reporting(0);
 
     try {
         // पहले महीना लॉक करें
@@ -84,7 +83,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                AND month = ? AND year = ?");
         $stmt->execute([$school_id, $current_month, $current_year]);
         
-        // उन शिक्षकों के लिए भी रिकॉर्ड बनाएं जिनके लिए अभी तक नहीं बनाया गया है
         $stmt = $conn->prepare("SELECT id FROM teachers WHERE school_id = ?");
         $stmt->execute([$school_id]);
         $teachers = $stmt->fetchAll(PDO::FETCH_COLUMN);
@@ -94,15 +92,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $stmt->execute([$teacher_id, $current_month, $current_year]);
         }
         
-        // स्कूल की जानकारी प्राप्त करें
         $school_udise = $school_info['udise_code'];
-        $month_for_db = date('Y-m'); // Format: YYYY-MM
+        $month_for_db = date('Y-m');
         
-        // मासिक लॉक रिकॉर्ड बनाएं
         $stmt = $conn->prepare("INSERT IGNORE INTO monthly_attendance_lock (school_udise, month, locked_by) VALUES (?, ?, ?)");
         $stmt->execute([$school_udise, $month_for_db, $_SESSION['user_id']]);
         
-        // शिक्षकों को श्रेणी के अनुसार ग्रुप करें
         $teachers_sql = "SELECT t.*, pfr.category as category_name, pfr.class_group 
                         FROM teachers t 
                         JOIN pf_forwarding_rules pfr ON t.category_id = pfr.id 
@@ -116,12 +111,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $teachers_by_category[$teacher['category_name']][] = $teacher;
         }
         
-        // पीएफ जेनरेशन के नियम अब डेटाबेस से प्राप्त करें
         $stmt = $conn->prepare("SELECT * FROM pf_forwarding_rules");
         $stmt->execute();
         $pf_rules = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
-        // हम PDF नहीं बना रहे, बल्कि डेटा को एक ऐरे में इकट्ठा कर रहे हैं
         $generated_reports_html = [];
         $generated_count = 0;
         
@@ -130,17 +123,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $class_group_name = $rule['class_group'];
             
             if (!isset($teachers_by_category[$category])) {
-                continue; // अगर इस श्रेणी का कोई शिक्षक स्कूल में नहीं है
+                continue;
             }
             
             $teachers_for_pdf = [];
             foreach ($teachers_by_category[$category] as $teacher) {
-                // कक्षा को मैच करने का लॉजिक
                 $is_match = false;
                 if ($class_group_name == 'All Classes') {
                     $is_match = true;
                 } else {
-                    // class_group को "&" के आधार पर विभाजित करें और जांचें
                     $class_groups = explode(' & ', $class_group_name);
                     foreach ($class_groups as $group) {
                         if (trim($teacher['class']) == trim($group)) {
@@ -155,241 +146,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
             
             if (empty($teachers_for_pdf)) {
-                continue; // अगर इस नियम के लिए कोई शिक्षक नहीं मिला
+                continue;
             }
             
-            // रेफरेंस नंबर जेनरेट करें
             $ref_no = 'PF/' . $school_udise . '/' . $month_for_db . '/' . strtoupper(uniqid());
             
-            // बेहतर PDF जेनरेट करने के लिए HTML बनाएं
+            // PDF के लिए HTML बनाएं (इसे Client-Side पर कनवर्ट किया जाएगा)
             $html_content = "
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset='utf-8'>
-                <title>शिक्षक उपस्थिति विवरणी</title>
-                <style>
-                    @page {
-                        size: A4;
-                        margin: 1cm;
-                    }
-                    
-                    body {
-                        font-family: 'Arial', sans-serif;
-                        font-size: 12px;
-                        line-height: 1.4;
-                        margin: 0;
-                        padding: 0;
-                    }
-                    
-                    .header {
-                        text-align: center;
-                        margin-bottom: 20px;
-                    }
-                    
-                    .header h2 {
-                        margin: 0;
-                        font-size: 18px;
-                        font-weight: bold;
-                    }
-                    
-                    .info-section {
-                        margin-bottom: 15px;
-                    }
-                    
-                    .info-row {
-                        display: flex;
-                        margin-bottom: 5px;
-                    }
-                    
-                    .info-label {
-                        font-weight: bold;
-                        width: 180px;
-                    }
-                    
-                    .info-value {
-                        flex: 1;
-                    }
-                    
-                    .section-title {
-                        text-align: center;
-                        font-weight: bold;
-                        margin: 15px 0 10px;
-                        font-size: 14px;
-                    }
-                    
-                    table {
-                        width: 100%;
-                        border-collapse: collapse;
-                        margin-bottom: 15px;
-                    }
-                    
-                    th, td {
-                        border: 1px solid #000;
-                        padding: 5px;
-                        text-align: left;
-                        vertical-align: top;
-                    }
-                    
-                    th {
-                        background-color: #f2f2f2;
-                        font-weight: bold;
-                        text-align: center;
-                        font-size: 11px;
-                    }
-                    
-                    td {
-                        font-size: 11px;
-                    }
-                    
-                    .text-center {
-                        text-align: center;
-                    }
-                    
-                    .declaration {
-                        margin: 20px 0;
-                        text-align: justify;
-                    }
-                    
-                    .signature-section {
-                        margin-top: 30px;
-                    }
-                    
-                    .signature-row {
-                        display: flex;
-                        margin-bottom: 10px;
-                    }
-                    
-                    .signature-left {
-                        width: 50%;
-                        text-align: center;
-                    }
-                    
-                    .signature-right {
-                        width: 50%;
-                        text-align: center;
-                    }
-                    
-                    /* पेज ब्रेक के लिए */
-                    .page-break {
-                        page-break-after: always;
-                    }
-                    
-                    /* हर पेज पर टेबल हेडर दोहराने के लिए */
-                    thead {
-                        display: table-header-group;
-                    }
-                    
-                    tr:nth-child(even) {
-                        background-color: #f9f9f9;
-                    }
-                    
-                    tr:hover {
-                        background-color: #f1f1f1;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class='header'>
-                    <h2>शिक्षक उपस्थिति विवरणी (वैशाली)</h2>
+            <div id='reportContent' style='font-family: Arial, sans-serif; padding: 20px;'>
+                <div style='text-align: center; margin-bottom: 20px;'>
+                    <h2 style='margin: 0; font-size: 18px; font-weight: bold;'>शिक्षक उपस्थिति विवरणी</h2>
                 </div>
                 
-                <div class='info-section'>
-                    <div class='info-row'>
-                        <div class='info-label'>विद्यालय का नाम:</div>
-                        <div class='info-value'>{$school_info['name']}</div>
-                    </div>
-                    <div class='info-row'>
-                        <div class='info-label'>UDISE कोड:</div>
-                        <div class='info-value'>{$school_info['udise_code']}</div>
-                    </div>
-                    <div class='info-row'>
-                        <div class='info-label'>प्रखंड:</div>
-                        <div class='info-value'>{$school_info['block_name']}</div>
-                    </div>
-                    <div class='info-row'>
-                        <div class='info-label'>महीना:</div>
-                        <div class='info-value'>" . date('F Y', strtotime($month_for_db . '-01')) . "</div>
-                    </div>
-                    <div class='info-row'>
-                        <div class='info-label'>पीएफ जनरेट करने की तिथि:</div>
-                        <div class='info-value'>" . date('d-m-Y') . "</div>
-                    </div>
-                    <div class='info-row'>
-                        <div class='info-label'>रेफरेंस नंबर:</div>
-                        <div class='info-value'>{$ref_no}</div>
-                    </div>
+                <div style='margin-bottom: 15px; font-size: 12px;'>
+                    <div style='display: flex; margin-bottom: 5px;'><strong>विद्यालय का नाम:</strong> <span>{$school_info['name']}</span></div>
+                    <div style='display: flex; margin-bottom: 5px;'><strong>UDISE कोड:</strong> <span>{$school_info['udise_code']}</span></div>
+                    <div style='display: flex; margin-bottom: 5px;'><strong>प्रखंड:</strong> <span>{$school_info['block_name']}</span></div>
+                    <div style='display: flex; margin-bottom: 5px;'><strong>महीना:</strong> <span>" . date('F Y', strtotime($month_for_db . '-01')) . "</span></div>
+                    <div style='display: flex; margin-bottom: 5px;'><strong>रेफरेंस नंबर:</strong> <span>{$ref_no}</span></div>
                 </div>
                 
-                <div class='section-title'>
+                <div style='text-align: center; font-weight: bold; margin: 15px 0 10px; font-size: 14px;'>
                     श्रेणी: {$category} | कक्षा समूह: {$class_group_name}
                 </div>
                 
-                <table>
+                <table style='width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 11px;'>
                     <thead>
-                        <tr>
-                            <th width='5%'>S.No.</th>
-                            <th width='20%'>शिक्षक का नाम</th>
-                            <th width='12%'>PRAN/UAN</th>
-                            <th width='8%'>कुल भुगतान हेतु उपस्थित दिवस</th>
-                            <th width='8%'>कुल Eshikshakosh आगमन दिवस</th>
-                            <th width='8%'>कुल Eshikshakosh प्रस्थान दिवस</th>
-                            <th width='8%'>अनधिकृत अनुपस्थिति दिवस</th>
-                            <th width='8%'>वर्तमान माह में ली गई सभी प्रकार की अवकाश की संख्या</th>
-                            <th width='12%'>अभियुक्ति</th>
-                            <th width='5%'>कक्षा</th>
+                        <tr style='background-color: #f2f2f2;'>
+                            <th style='border: 1px solid #000; padding: 5px; text-align: center;'>S.No.</th>
+                            <th style='border: 1px solid #000; padding: 5px;'>शिक्षक का नाम</th>
+                            <th style='border: 1px solid #000; padding: 5px;'>PRAN/UAN</th>
+                            <th style='border: 1px solid #000; padding: 5px; text-align: center;'>भुगतान हेतु उपस्थिति दिवस</th>
+                            <th style='border: 1px solid #000; padding: 5px; text-align: center;'>अनधिकृत अनुपस्थिति</th>
+                            <th style='border: 1px solid #000; padding: 5px; text-align: center;'>अवकाश</th>
+                            <th style='border: 1px solid #000; padding: 5px;'>अभियुक्ति</th>
+                            <th style='border: 1px solid #000; padding: 5px; text-align: center;'>कक्षा</th>
                         </tr>
                     </thead>
                     <tbody>";
             
             $serial_no = 1;
             foreach ($teachers_for_pdf as $teacher) {
-                // शिक्षक की उपस्थिति डेटा प्राप्त करें
                 $stmt = $conn->prepare("SELECT total_attendance_days, in_time_count, out_time_count, unauthorized_absence_days, leave_days, remarks 
                                        FROM attendance 
                                        WHERE teacher_id = ? AND month = ? AND year = ?");
                 $stmt->execute([$teacher['id'], $current_month, $current_year]);
                 $attendance_data = $stmt->fetch(PDO::FETCH_ASSOC);
                 
-                // हर 15 शिक्षकों के बाद नया पेज शुरू करें
-                if ($serial_no > 1 && ($serial_no - 1) % 15 == 0) {
-                    $html_content .= "
-                    </tbody>
-                </table>
-                <div class='page-break'></div>
-                <div class='section-title'>
-                    श्रेणी: {$category} | कक्षा समूह: {$class_group_name} (जारी)
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th width='5%'>S.No.</th>
-                            <th width='20%'>शिक्षक का नाम</th>
-                            <th width='12%'>PRAN/UAN</th>
-                            <th width='8%'>कुल भुगतान हेतु उपस्थित दिवस</th>
-                            <th width='8%'>कुल Eshikshakosh आगमन दिवस</th>
-                            <th width='8%'>कुल Eshikshakosh प्रस्थान दिवस</th>
-                            <th width='8%'>अनधिकृत अनुपस्थिति दिवस</th>
-                            <th width='8%'>वर्तमान माह में ली गई सभी प्रकार की अवकाश की संख्या</th>
-                            <th width='12%'>अभियुक्ति</th>
-                            <th width='5%'>कक्षा</th>
-                        </tr>
-                    </thead>
-                    <tbody>";
-                }
-                
                 $html_content .= "
                     <tr>
-                        <td class='text-center'>{$serial_no}</td>
-                        <td>{$teacher['name']}</td>
-                        <td>" . ($teacher['pran_no'] ?: $teacher['uan_no']) . "</td>
-                        <td class='text-center'>" . ($attendance_data['total_attendance_days'] ?? 0) . "</td>
-                        <td class='text-center'>" . ($attendance_data['in_time_count'] ?? 0) . "</td>
-                        <td class='text-center'>" . ($attendance_data['out_time_count'] ?? 0) . "</td>
-                        <td class='text-center'>" . ($attendance_data['unauthorized_absence_days'] ?? 0) . "</td>
-                        <td class='text-center'>" . ($attendance_data['leave_days'] ?? 0) . "</td>
-                        <td>" . ($attendance_data['remarks'] ?? '') . "</td>
-                        <td>{$teacher['class']}</td>
+                        <td style='border: 1px solid #000; padding: 5px; text-align: center;'>{$serial_no}</td>
+                        <td style='border: 1px solid #000; padding: 5px;'>{$teacher['name']}</td>
+                        <td style='border: 1px solid #000; padding: 5px;'>" . ($teacher['pran_no'] ?: $teacher['uan_no']) . "</td>
+                        <td style='border: 1px solid #000; padding: 5px; text-align: center;'>" . ($attendance_data['total_attendance_days'] ?? 0) . "</td>
+                        <td style='border: 1px solid #000; padding: 5px; text-align: center;'>" . ($attendance_data['unauthorized_absence_days'] ?? 0) . "</td>
+                        <td style='border: 1px solid #000; padding: 5px; text-align: center;'>" . ($attendance_data['leave_days'] ?? 0) . "</td>
+                        <td style='border: 1px solid #000; padding: 5px;'>" . ($attendance_data['remarks'] ?? '') . "</td>
+                        <td style='border: 1px solid #000; padding: 5px; text-align: center;'>{$teacher['class']}</td>
                     </tr>";
                 $serial_no++;
             }
@@ -398,37 +211,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     </tbody>
                 </table>
                 
-                <div class='declaration'>
-                    <strong>घोषणा:</strong> उपरोक्त सभी शिक्षक मेरे विद्यालय में कार्यरत हैं | सभी के द्वारा विद्यालय में ससमय उपस्थित होकर अपने दायित्वों का निर्वहन  किया गया है | कोई भी अवैध निकासी नहीं की जा रही है | इसमें किसी प्रकार की लापरवाही होने पर मेरे विरुद्ध विभागीय एवं अनुशासनिक कार्रवाई करते हुए अवैध भुगतान की राशि मेरे से वसूल किया जा सकता है |
+                <div style='margin: 20px 0; text-align: justify; font-size: 11px;'>
+                    <strong>घोषणा:</strong> उपरोक्त सभी शिक्षक मेरे विद्यालय में कार्यरत हैं | सभी के द्वारा विद्यालय में ससमय उपस्थित होकर अपने दायित्वों का निर्वहन किया गया है | कोई भी अवैध निकासी नहीं की जा रही है |
                 </div>
-                        <div class='declaration-left'>
+				<div class='signature-left'>
                             <strong>ज्ञापांक: ____________ दिनांक: ___________</strong>
                         </div>
-                    </div>
-                    <div class='signature-section'>
-                    <div class='signature-row'>
-                        <div class='signature-left'>
-                        </div>
-                        <div class='signature-right'>
-                            <strong>         प्रधानाध्यापक का हस्ताक्षर एवं मुहर</strong>
-                        </div>
-                        <div class='signature-right'>
-                        </div>
-                    </div>
+                <div style='margin-top: 30px; text-align: center; font-size: 12px;'>
+                    <strong>प्रधानाध्यापक का हस्ताक्षर एवं मुहर</strong>
                 </div>
-                
-                <div class='declaration'>
-                    <strong>प्रतिलिपि:</strong> जिला कार्यक्रम पदाधिकारी, स्थापना/चिन्हित मध्य विद्यालय के प्रधानाध्यापक, जिला-वैशाली को सूचनार्थ प्रेषित | अनुरोध है कि उपर्युक्त वर्णित शिक्षकों का भुगतान करने की कृपा करें |
+				<div style='margin: 20px 0; text-align: justify; font-size: 11px;'>
+                    <strong>प्रतिलिपि:</strong> जिला कार्यक्रम पदाधिकारी, स्थापना / सम्बंधित चिन्हित मध्य विद्यालय के प्रधानाध्यापक, जिला-वैशाली को सूचनार्थ प्रेषित | अनुरोध है कि उपर्युक्त वर्णित शिक्षकों का भुगतान करने की कृपा करें |
                 </div>
-            </body>
-            </html>";
+            </div>";
             
-            // डेटाबेस में एंट्री करें (generated_pdf_path में अब HTML सामग्री सेव करेंगे)
             $insert_sql = "INSERT INTO pf_submissions (school_udise, month, category, class_group, reference_number, generated_pdf_path) VALUES (?, ?, ?, ?, ?, ?)";
             $stmt = $conn->prepare($insert_sql);
             $stmt->execute([$school_udise, $month_for_db, $category, $class_group_name, $ref_no, $html_content]);
             
-            // HTML को ऐरे में जोड़ें
             $generated_reports_html[] = [
                 'ref_no' => $ref_no,
                 'category' => $category,
@@ -438,7 +238,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $generated_count++;
         }
         
-        // सफलता का JSON रिस्पॉन्स भेजें
         echo json_encode([
             'status' => 'success', 
             'message' => 'महीना सफलतापूर्वक लॉक कर दिया गया है और ' . $generated_count . ' पीएफ रिपोर्ट तैयार हैं!',
@@ -446,7 +245,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         ]);
 
     } catch (Exception $e) {
-        // त्रुटि का JSON रिस्पॉन्स भेजें
         echo json_encode(['status' => 'error', 'message' => 'त्रुटि: ' . $e->getMessage()]);
     }
     exit;
@@ -491,6 +289,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             width: 250px;
             z-index: 100;
             transition: all 0.3s ease;
+            overflow-y: auto;
         }
         
         .sidebar .nav-link {
@@ -498,6 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             padding: 15px 20px;
             border-radius: 0;
             transition: all 0.3s ease;
+            font-size: 0.95rem;
         }
         
         .sidebar .nav-link:hover, .sidebar .nav-link.active {
@@ -507,23 +307,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         
         .sidebar .nav-link i {
             margin-right: 10px;
+            width: 20px;
+            text-align: center;
         }
         
         .main-content {
             margin-left: 250px;
             padding: 20px;
+            transition: all 0.3s ease;
         }
         
         .navbar {
             background: white;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 10px;
+            margin-bottom: 20px;
         }
         
         .card {
             border: none;
             border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            margin-bottom: 25px;
         }
         
         .card-header {
@@ -531,8 +336,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             color: white;
             font-weight: 600;
             border-radius: 15px 15px 0 0 !important;
+            padding: 15px 20px;
         }
         
+        .card-body {
+            padding: 20px;
+        }
+
         .btn-primary {
             background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
             border: none;
@@ -582,29 +392,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             width: 50px;
             height: 50px;
             font-size: 1.5rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
         
         .form-control, .form-select {
             border-radius: 10px;
             border: 1px solid #ddd;
+            transition: all 0.3s ease;
         }
         
         .form-control:focus, .form-select:focus {
             border-color: var(--primary-color);
-            box-shadow: 0 0 0 0.25rem rgba(106, 27, 154, 0.25);
+            box-shadow: 0 0 0 0.2rem rgba(106, 27, 154, 0.25);
         }
         
         .attendance-input {
             width: 100px;
-        }
-        
-        .print-section {
-            display: none;
-            background-color: #e8f5e9;
-            border: 1px dashed #4caf50;
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 20px;
         }
         
         .pf-section {
@@ -624,45 +427,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             max-width: 350px;
         }
 
-        @media print {
-            body * { visibility: hidden; }
-            .printable-area, .printable-area * { visibility: visible; }
-            .printable-area { position: absolute; left: 0; top: 0; width: 100%; }
-        }
-        
+        /* मोबाइल रेस्पॉन्सिव स्टाइल */
         @media (max-width: 992px) {
             .sidebar { transform: translateX(-100%); }
             .sidebar.active { transform: translateX(0); }
-            .main-content { margin-left: 0; }
+            .main-content { margin-left: 0; padding: 15px; }
             .mobile-menu-btn { display: flex; align-items: center; justify-content: center; }
+            .navbar { margin-top: 70px; }
+        }
+
+        @media (max-width: 768px) {
+            .main-content { padding: 10px; }
+            .card-body { padding: 15px; }
+            .card-header { padding: 12px 15px; font-size: 1rem; }
+            .btn-primary { padding: 8px 20px; font-size: 0.9rem; }
+            .navbar h4 { font-size: 1.2rem; }
+            .user-avatar { width: 35px; height: 35px; font-size: 0.9rem; }
+            .form-label { font-size: 0.9rem; }
+            .table-responsive { font-size: 0.85rem; }
+            .attendance-input { width: 80px; }
+        }
+        
+        @media (max-width: 576px) {
+            .card-header { font-size: 0.9rem; }
+            .form-label { font-size: 0.85rem; }
+            .form-control, .form-select { font-size: 0.9rem; }
+            .btn-primary { padding: 6px 15px; font-size: 0.85rem; }
+            .table-responsive { font-size: 0.8rem; }
         }
     </style>
 </head>
 <body>
     <div class="alert-container" id="alertContainer"></div>
     <button class="mobile-menu-btn" id="mobileMenuBtn"><i class="fas fa-bars"></i></button>
-    <div class="sidebar" id="sidebar">
-        <div class="p-4 text-center">
-            <h4>बिहार शिक्षा विभाग</h4>
-            <p class="mb-0">विद्यालय डैशबोर्ड</p>
-        </div>
-        <hr class="text-white">
-        <ul class="nav flex-column">
-            <li class="nav-item"><a class="nav-link" href="school_dashboard.php"><i class="fas fa-tachometer-alt"></i> डैशबोर्ड</a></li>
-            <li class="nav-item"><a class="nav-link" href="school_profile.php"><i class="fas fa-school"></i> विद्यालय प्रोफाइल</a></li>
-            <li class="nav-item"><a class="nav-link" href="enrollment.php"><i class="fas fa-user-graduate"></i> नामांकन</a></li>
-            <li class="nav-item"><a class="nav-link" href="teachers.php"><i class="fas fa-chalkboard-teacher"></i> शिक्षक विवरण</a></li>
-            <li class="nav-item"><a class="nav-link active" href="attendance.php"><i class="fas fa-calendar-check"></i> उपस्थिति विवरणी</a></li>
-			<li class="nav-item"><a class="nav-link active" href="pf_management.php"><i class="fas fa-file-pdf"></i> पीडीएफ प्रबंधन</a></li>
-            <li class="nav-item"><a class="nav-link" href="salary_status.php"><i class="fas fa-money-check-alt"></i> वेतन स्थिति</a></li>
-            <li class="nav-item"><a class="nav-link" href="salary_complaint.php"><i class="fas fa-exclamation-triangle"></i> वेतन शिकायत</a></li>
-			<li class="nav-item"><a class="nav-link" href="letters.php"><i class="fas fa-envelope"></i> पत्र</a></li>
-            <li class="nav-item"><a class="nav-link" href="notices.php"><i class="fas fa-bullhorn"></i> नोटिस</a></li>
-            <li class="nav-item"><a class="nav-link" href="logout.php"><i class="fas fa-sign-out-alt"></i> लॉग आउट</a></li>
-        </ul>
-    </div>
+    
+    <!-- साइडबार टेम्पलेट शामिल करें -->
+    <?php require_once 'sidebar_template.php'; ?>
+
     <div class="main-content">
-        <nav class="navbar navbar-expand-lg navbar-light mb-4">
+        <nav class="navbar navbar-expand-lg navbar-light">
             <div class="container-fluid">
                 <h4 class="mb-0">उपस्थिति विवरणी</h4>
                 <div class="d-flex align-items-center">
@@ -781,6 +584,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         </div>
     </div>
 
+    <!-- Client-Side PDF Generation Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.getElementById('mobileMenuBtn').addEventListener('click', function() {
@@ -873,7 +680,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     if (data.status === 'success') {
                         showAlert(data.message, 'success');
                         
-                        // पीएफ सेक्शन दिखाएं और टेबल को अपडेट करें
                         let pfContainer = document.getElementById('pfSection');
                         pfContainer.style.display = 'block';
                         const pfTableBody = document.querySelector('#pfTable tbody');
@@ -887,31 +693,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 <td>${pf.class_group}</td>
                                 <td>${pf.ref_no}</td>
                                 <td>
-                                    <button class="btn btn-sm btn-primary" onclick="printReport('${pf.ref_no}')">
-                                        <i class="fas fa-print"></i> प्रिंट करें (PDF)
+                                    <button class="btn btn-sm btn-success" onclick="downloadReport('${pf.ref_no}')">
+                                        <i class="fas fa-download"></i> डाउनलोड करें (PDF)
                                     </button>
                                 </td>
                                 <td>
                                     <form action="upload_signed_pf.php" method="post" enctype="multipart/form-data" style="display:inline;">
                                         <input type="hidden" name="pf_id" value="${pf.ref_no}">
                                         <input type="file" name="signed_pdf" class="form-control form-control-sm mb-2" accept=".pdf" required>
-                                        <button type="submit" class="btn btn-sm btn-success">अपलोड करें</button>
+                                        <button type="submit" class="btn btn-sm btn-primary">अपलोड करें</button>
                                     </form>
                                 </td>
                                 <td><span class="badge bg-secondary">जेनरेट किया गया</span></td>
                             `;
                             pfTableBody.appendChild(row);
 
-                            // प्रिंट करने के लिए छिपा हुआ डिव बनाएं
+                            // डाउनलोड करने के लिए छिपा हुआ डिव बनाएं
                             const printDiv = document.createElement('div');
                             printDiv.id = `printable_${pf.ref_no}`;
                             printDiv.className = 'printable-area';
                             printDiv.style.display = 'none';
+                            printDiv.style.position = 'absolute';
+                            printDiv.style.left = '-9999px'; // स्क्रीन से बाहर रखें
                             printDiv.innerHTML = pf.html;
                             document.body.appendChild(printDiv);
                         });
 
-                        // बटन को छिपा दें
                         this.style.display = 'none';
 
                     } else {
@@ -928,20 +735,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         });
 
-        function printReport(refId) {
-            // सभी प्रिंटेबल एरिया को छिपाएं
-            document.querySelectorAll('.printable-area').forEach(area => {
-                area.style.display = 'none';
+        // नया डाउनलोड रिपोर्ट फंक्शन
+        function downloadReport(refId) {
+            const { jsPDF } = window.jspdf;
+            const element = document.getElementById(`printable_${refId}`);
+
+            // एलिमेंट को अस्थायी रूप से दिखाएं ताकि इसे कैप्चर किया जा सके
+            element.style.position = 'absolute';
+            element.style.left = '0';
+            element.style.top = '0';
+            element.style.display = 'block';
+            element.style.backgroundColor = 'white';
+
+            showAlert('PDF तैयार हो रहा है, कृपया प्रतीक्षा करें...', 'info');
+
+            html2canvas(element, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                width: element.scrollWidth,
+                height: element.scrollHeight
+            }).then(canvas => {
+                // एलिमेंट को फिर से छिपा दें
+                element.style.display = 'none';
+                element.style.position = 'absolute';
+                element.style.left = '-9999px';
+
+                const imgData = canvas.toDataURL('image/png');
+                
+                // A4 size in mm: 210 x 297
+                const pdf = new jsPDF({
+                    orientation: 'portrait',
+                    unit: 'mm',
+                    format: 'a4'
+                });
+                
+                const imgWidth = 210; 
+                const pageHeight = 295; // A4 height with some margin
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                let heightLeft = imgHeight;
+
+                let position = 0;
+
+                // Add first page
+                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+
+                // Add remaining pages if content is longer than one page
+                while (heightLeft >= 0) {
+                    position = heightLeft - imgHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                }
+
+                // Save the PDF
+                pdf.save(`PF_Report_${refId}.pdf`);
             });
-            
-            // केवल वर्तमान रिपोर्ट को दिखाएं
-            const reportToPrint = document.getElementById(`printable_${refId}`);
-            if (reportToPrint) {
-                reportToPrint.style.display = 'block';
-                window.print();
-                // प्रिंट के बाद फिर से छिपा दें (वैकल्पिक, लेकिन अच्छा अभ्यास है)
-                reportToPrint.style.display = 'none';
-            }
         }
         
         function getStatusText(status) {
@@ -984,8 +834,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     <td>${pf.class_group}</td>
                                     <td>${pf.reference_number}</td>
                                     <td>
-                                        <button class="btn btn-sm btn-primary" onclick="printReport('${pf.reference_number}')">
-                                            <i class="fas fa-print"></i> प्रिंट करें
+                                        <button class="btn btn-sm btn-success" onclick="downloadReport('${pf.reference_number}')">
+                                            <i class="fas fa-download"></i> डाउनलोड करें
                                         </button>
                                     </td>
                                     <td>
@@ -996,7 +846,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                             `<form action="upload_signed_pf.php" method="post" enctype="multipart/form-data" style="display:inline;">
                                                 <input type="hidden" name="pf_id" value="${pf.id}">
                                                 <input type="file" name="signed_pdf" class="form-control form-control-sm mb-2" accept=".pdf" required>
-                                                <button type="submit" class="btn btn-sm btn-success">अपलोड करें</button>
+                                                <button type="submit" class="btn btn-sm btn-primary">अपलोड करें</button>
                                             </form>`
                                         }
                                     </td>
@@ -1008,11 +858,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 `;
                                 pfTableBody.appendChild(row);
                                 
-                                // प्रिंट करने के लिए छिपा हुआ डिव बनाएं और उसमें DB से HTML डालें
+                                // डाउनलोड करने के लिए छिपा हुआ डिव बनाएं और उसमें DB से HTML डालें
                                 const printDiv = document.createElement('div');
                                 printDiv.id = `printable_${pf.reference_number}`;
                                 printDiv.className = 'printable-area';
                                 printDiv.style.display = 'none';
+                                printDiv.style.position = 'absolute';
+                                printDiv.style.left = '-9999px';
                                 printDiv.innerHTML = pf.generated_pdf_path; // DB से HTML सामग्री
                                 document.body.appendChild(printDiv);
                             });
