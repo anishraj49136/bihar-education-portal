@@ -1,14 +1,14 @@
 <?php
 require_once 'config.php';
 
-// session_start() की चेतावनी से बचने के लिए
+// session_start() की जाँच करने के लिए
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// सत्र की जांच
-if (!isset($_SESSION['user_id']) || $_SESSION['user_type'] !== 'block_officer') {
-    die("अनधिकृत पहुंच।");
+// सुरक्षा जाँच: यह सुनिश्चित करें कि उपयोगकर्ता लॉग इन है और या तो 'block_officer' या 'ddo' है
+if (!isset($_SESSION['user_id']) || !in_array($_SESSION['user_type'], ['block_officer', 'ddo'])) {
+    die("अनधिकृत प्रवेश।");
 }
 
 // GET पैरामीटर प्राप्त करें
@@ -20,84 +20,61 @@ if (!$block_id || !$month_name || !$year) {
     die("आवश्यक पैरामीटर गुम हैं।");
 }
 
+// वर्तमान उपयोगकर्ता प्रकार प्राप्त करें ('block_officer' या 'ddo')
+ $user_type = $_SESSION['user_type'];
+
 // महीने के नाम को संख्या में बदलें ("November" -> "11")
  $numeric_month = date('m', strtotime($month_name));
- $year_month = $year . '-' . $numeric_month; // परिणाम होगा: '2025-11'
+ $year_month = $year . '-' . $numeric_month; // प्रारूप होगा: '2024-11'
 
 try {
-    // चरण 1: pf_submissions टेबल से सभी फॉरवर्डेड रिकॉर्ड्स के लिए school_udise निकालें
-    $forwarded_schools_sql = "SELECT DISTINCT pf.school_udise, pf.category, pf.class_group
-                              FROM pf_submissions pf
-                              JOIN schools s ON pf.school_udise = s.udise_code
-                              WHERE s.block_id = ? AND pf.status = 'forwarded_to_district' AND pf.month = ?";
-    
-    $stmt_forwarded = $conn->prepare($forwarded_schools_sql);
-    $stmt_forwarded->execute([$block_id, $year_month]);
-    $forwarded_records = $stmt_forwarded->fetchAll(PDO::FETCH_ASSOC);
-
-    if (empty($forwarded_records)) {
-        die("इस महीने के लिए भुगतान हेतु कोई शिक्षक नहीं मिला।");
-    }
-
-    // चरण 2: इन रिकॉर्ड्स से शिक्षकों को फ़िल्टर करने के लिए एक सहायक फ़ंक्शन
-    function doesTeacherMatch($teacher, $forwarded_records) {
-        foreach ($forwarded_records as $record) {
-            // स्कूल, श्रेणी और कक्षा का मिलान करें
-            if ($teacher['udise_code'] === $record['school_udise'] && $teacher['category'] === $record['category']) {
-                
-                $teacher_class = trim($teacher['class']); // शिक्षक की कक्षा, जैसे '1-5'
-                $class_group = trim($record['class_group']); // सबमिशन का कक्षा समूह, जैसे '1-5 & 6-8'
-
-                // --- नया और सुधारा हुआ तर्क ---
-                // 'All Classes' के लिए सीधे मिलान
-                if ($class_group === 'All Classes') {
-                    return true;
-                }
-                
-                // जांचें कि क्या शिक्षक की कक्षा ('1-5') सबमिशन के कक्षा समूह ('1-5 & 6-8') में मौजूद है
-                if (strpos($class_group, $teacher_class) !== false) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    // चरण 3: उन सभी शिक्षकों को ढूंढें जो उन स्कूलों से संबंधित हैं जिनका PF फॉरवर्ड किया गया है
-    $school_udises = array_unique(array_column($forwarded_records, 'school_udise'));
-    
-    if (empty($school_udises)) {
-        die("कोई स्कूल नहीं मिला।");
-    }
-
-    $placeholders = implode(',', array_fill(0, count($school_udises), '?'));
-    $teachers_sql = "SELECT t.name, t.mobile, t.pran_no, t.uan_no, t.class, t.category,
-                       s.name as school_name, s.udise_code
+    // --- मुख्य तर्क: pf_forwarding_rules के साथ JOIN करके रिपोर्ट तैयार करें ---
+    // यह क्वेरी सुनिश्चित करती है कि केवल वही शिक्षक आएँगे जिनका PF फॉर्म
+    // 1. इस ब्लॉक से है,
+    // 2. इस महीने के लिए है,
+    // 3. 'forwarded_to_district' स्थिति में भेजा गया है (block_officer द्वारा मंजूरी दी गई),
+    // 4. और pf_forwarding_rules टेबल में इस शिक्षक की श्रेणी/वर्ग समूह के लिए forward_to कॉलम वर्तमान उपयोगकर्ता प्रकार (user_type) के बराबर है।
+    $teachers_sql = "SELECT DISTINCT
+                       t.name,
+                       t.mobile,
+                       t.pran_no,
+                       t.uan_no,
+                       t.class,
+                       t.category,
+                       s.name as school_name,
+                       s.udise_code
                        FROM teachers t
                        JOIN schools s ON t.school_id = s.id
-                       WHERE s.udise_code IN ($placeholders)";
+                       JOIN pf_submissions pf ON s.udise_code = pf.school_udise
+                       JOIN pf_forwarding_rules pfr ON pf.category = pfr.category AND pf.class_group = pfr.class_group
+                       WHERE
+                           s.block_id = ?
+                           AND pf.month LIKE ?
+                           AND pf.status = 'forwarded_to_district'
+                           AND pfr.forward_to = ?";
+    
+    // 'LIKE' का उपयोग करके हम '2024-11' जैसे महीने से मेल खाने वाले किसी भी दिनांक को पकड़ सकते हैं।
+    $month_param = $year_month . '%';
+    
+    // पैरामीटर: block_id, month (with %), और वर्तमान उपयोगकर्ता प्रकार
+    $params = [$block_id, $month_param, $user_type];
     
     $stmt_teachers = $conn->prepare($teachers_sql);
-    $stmt_teachers->execute($school_udises);
-    $all_potential_teachers = $stmt_teachers->fetchAll(PDO::FETCH_ASSOC);
-
-    // चरण 4: इन शिक्षकों को pf_submissions के डेटा के खिलाफ फ़िल्टर करें
-    $final_teachers = [];
-    foreach ($all_potential_teachers as $teacher) {
-        if (doesTeacherMatch($teacher, $forwarded_records)) {
-            $final_teachers[] = $teacher;
-        }
-    }
+    $stmt_teachers->execute($params);
+    $final_teachers = $stmt_teachers->fetchAll(PDO::FETCH_ASSOC);
 
     if (count($final_teachers) === 0) {
-        die("कोई मेल खाने वाला शिक्षक डेटा नहीं मिला।");
+        die("इस महीने और आपके अधिकार क्षेत्र के लिए भुगतान हेतु कोई शिक्षक नहीं मिला।");
     }
 
     // CSV फाइल बनाना
-    $filename = "payment_report_" . $block_id . "_" . $month_name . "_" . $year . ".csv";
+    $filename = "payment_report_" . $user_type . "_" . $block_id . "_" . $month_name . "_" . $year . ".csv";
     
-    header('Content-Type: text/csv');
+    header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
+
+    // UTF-8 BOM जोड़ें ताकि एक्सेल में हिंदी अक्षर सही तरीके से दिखें
+    echo "\xEF\xBB\xBF";
 
     $output = fopen('php://output', 'w');
 

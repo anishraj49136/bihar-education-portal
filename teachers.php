@@ -22,54 +22,6 @@ if (!isset($_SESSION['user_id'])) {
  $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 20;
  $offset = ($page - 1) * $per_page;
 
-// Export functionality
-if (isset($_GET['export']) && $_GET['export'] == 'csv') {
-    // Set headers for CSV download
-    header('Content-Type: text/csv');
-    header('Content-Disposition: attachment; filename="teachers_list.csv"');
-    
-    // Open output stream
-    $output = fopen('php://output', 'w');
-    
-    // Add CSV header
-    fputcsv($output, ['क्र. सं.', 'जिला', 'ब्लॉक', 'विद्यालय', 'ई-शिक्षकोष ID', 'नाम', 'प्रकार', 'कक्षा', 'मोबाइल नंबर', 'PRAN/UAN', 'श्रेणी']);
-    
-    // Get teachers data without pagination for export
-    $export_query = "SELECT t.*, s.name as school_name, b.name as block_name, b.id as block_id, d.name as district_name, d.id as district_id
-                    FROM teachers t 
-                    JOIN schools s ON t.school_id = s.id 
-                    JOIN blocks b ON s.block_id = b.id 
-                    JOIN districts d ON b.district_id = d.id 
-                    WHERE 1=1 " . $where_clause . " 
-                    ORDER BY d.name, b.name, s.name, t.name";
-    
-    $export_stmt = $conn->prepare($export_query);
-    $export_stmt->execute($params);
-    $export_teachers = $export_stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Add data rows
-    foreach ($export_teachers as $index => $teacher) {
-        $row = [
-            $index + 1,
-            $teacher['district_name'],
-            $teacher['block_name'],
-            $teacher['school_name'],
-            $teacher['eshikshakosh_id'],
-            $teacher['name'],
-            $teacher['type'],
-            $teacher['class'],
-            $teacher['mobile'],
-            $teacher['pran_no'] ?: $teacher['uan_no'],
-            $teacher['category']
-        ];
-        fputcsv($output, $row);
-    }
-    
-    // Close output stream
-    fclose($output);
-    exit;
-}
-
 // शिक्षक श्रेणियां प्राप्त करें
  $stmt = $conn->prepare("SELECT * FROM pf_forwarding_rules ORDER BY category");
  $stmt->execute();
@@ -298,6 +250,59 @@ if ($user_type !== 'school' && isset($_GET['search']) && !empty($_GET['search'])
     $params[] = $search_term;
 }
 
+// Export functionality
+if (isset($_GET['export']) && $_GET['export'] == 'csv') {
+    // Set headers for CSV download
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="teachers_list.csv"');
+    
+    // Open output stream
+    $output = fopen('php://output', 'w');
+    
+    // Add CSV header
+    fputcsv($output, ['SN.', 'District Name', 'Block Name', 'School Name', 'Eshikshakosh ID', 'Teacher Name', 'Appointment Type', 'Class', 'Mobile No', 'PRAN/UAN', 'Teacher Type']);
+    
+    // Get teachers data without pagination for export
+    $export_query = "SELECT t.*, s.name as school_name, b.name as block_name, b.id as block_id, d.name as district_name, d.id as district_id
+                    FROM teachers t 
+                    JOIN schools s ON t.school_id = s.id 
+                    JOIN blocks b ON s.block_id = b.id 
+                    JOIN districts d ON b.district_id = d.id 
+                    WHERE 1=1 " . $where_clause . " 
+                    ORDER BY d.name, b.name, s.name, t.name";
+    
+    $export_stmt = $conn->prepare($export_query);
+    $export_stmt->execute($params);
+    $export_teachers = $export_stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Add data rows
+    foreach ($export_teachers as $index => $teacher) {
+        // Format the Eshikshakosh ID, Class, and PRAN/UAN as text by adding a tab character at the beginning
+        $eshikshakosh_id = "\t" . $teacher['eshikshakosh_id'];
+        $class = "\t" . $teacher['class'];
+        $pran_uan = "\t" . ($teacher['pran_no'] ?: $teacher['uan_no']);
+        
+        $row = [
+            $index + 1,
+            $teacher['district_name'],
+            $teacher['block_name'],
+            $teacher['school_name'],
+            $eshikshakosh_id,
+            $teacher['name'],
+            $teacher['type'],
+            $class,
+            $teacher['mobile'],
+            $pran_uan,
+            $teacher['category']
+        ];
+        fputcsv($output, $row);
+    }
+    
+    // Close output stream
+    fclose($output);
+    exit;
+}
+
 // कुल रिकॉर्ड्स की गिनती करें
  $count_query = "SELECT COUNT(*) as total 
                 FROM teachers t 
@@ -343,6 +348,7 @@ if ($per_page > 0) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/style.css">
     <style>
         :root {
             --primary-color: #6a1b9a;
@@ -569,7 +575,9 @@ if ($per_page > 0) {
     </button>
     
     <!-- साइडबार -->
-    <?php include 'sidebar_template.php'; ?>
+    <div id="sidebar" class="sidebar">
+        <?php include 'sidebar_template.php'; ?>
+    </div>
     
     <!-- मुख्य सामग्री -->
     <div class="main-content">

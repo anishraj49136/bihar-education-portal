@@ -36,9 +36,9 @@
                 <li class="nav-item"><a class="nav-link" href="teachers.php"><i class="fas fa-chalkboard-teacher"></i> शिक्षक प्रबंधन</a></li>
                 <li class="nav-item"><a class="nav-link" href="view_school_photos.php"><i class="fas fa-chalkboard-teacher"></i> विद्यालय तस्वीर प्रबंधन</a></li>
                 <li class="nav-item"><a class="nav-link" href="download_payment_report.php"><i class="fas fa-calendar-check"></i> जिले को अग्रसारित भुगतान हेतु विवरणी</a></li>
+				<li class="nav-item"><a class="nav-link" href="salary_status.php"><i class="fas fa-money-check-alt"></i> वेतन स्थिति</a></li>
                 <li class="nav-item"><a class="nav-link" href="letters.php"><i class="fas fa-envelope"></i> पत्र</a></li>
                 <li class="nav-item"><a class="nav-link" href="notices.php"><i class="fas fa-bullhorn"></i> नोटिस</a></li>
-                <li class="nav-item"><a class="nav-link" href="salary_status.php"><i class="fas fa-money-check-alt"></i> वेतन स्थिति</a></li>
             <?php elseif (in_array($_SESSION['user_type'], ['district_staff', 'district_program_officer', 'district_education_officer'])): ?>
                 <li class="nav-item"><a class="nav-link" href="district_dashboard.php"><i class="fas fa-tachometer-alt"></i> डैशबोर्ड</a></li>
                 <li class="nav-item"><a class="nav-link" href="manage_schools.php"><i class="fas fa-school"></i> विद्यालय प्रबंधन</a></li>
@@ -75,7 +75,7 @@
     <!-- लॉगआउट लिंक को sidebar-content के बाहर रखा गया है ताकि यह हमेशा दिखे -->
     <div class="logout-section p-3">
         <ul class="nav flex-column">
-            <li class="nav-item"><a class="nav-link text-danger" href="logout.php"><i class="fas fa-sign-out-alt"></i> लॉग आउट</a></li>
+            <li class="nav-item"><a class="nav-link" href="logout.php"><i class="fas fa-sign-out-alt"></i> लॉग आउट</a></li>
         </ul>
     </div>
 </div>

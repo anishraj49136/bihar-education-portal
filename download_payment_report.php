@@ -9,7 +9,6 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 if (!isset($_SESSION['user_id']) || $_SESSION['user_type'] === 'school') {
-    // यहाँ आप उपयोगकर्ता को लॉगिन पेज पर रीडायरेक्ट भी कर सकते हैं
     die("अनधिकृत पहुंच। केवल स्कूल के अलावा अन्य उपयोगकर्ता इस पेज को एक्सेस कर सकते हैं।");
 }
 
@@ -17,102 +16,6 @@ if (!isset($_SESSION['user_id']) || $_SESSION['user_type'] === 'school') {
  $block_id = $_SESSION['block_id'] ?? null;
 if (!$block_id) {
     die("उपयोगकर्ता का ब्लॉक आईडी सत्र में नहीं मिला।");
-}
-
-// रिपोर्ट जनरेशन का लॉजिक (AJAX अनुरोध पर चलेगा)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'generate_report') {
-    
-    $month_name = $_POST['month'] ?? null;
-    $year = $_POST['year'] ?? null;
-    $selected_category = $_POST['category'] ?? null; // यह वैकल्पिक है
-
-    if (!$month_name || !$year) {
-        echo json_encode(['success' => false, 'message' => 'महीना और वर्ष चुनना अनिवार्य है।']);
-        exit;
-    }
-
-    try {
-        $numeric_month = date('m', strtotime($month_name));
-        $year_month = $year . '-' . $numeric_month;
-
-        // SQL क्वेरी को श्रेणी फ़िल्टर के लिए संशोधित करें
-        $sql = "SELECT DISTINCT pf.school_udise, pf.category, pf.class_group
-                FROM pf_submissions pf
-                JOIN schools s ON pf.school_udise = s.udise_code
-                WHERE s.block_id = ? AND pf.status = 'forwarded_to_district' AND pf.month = ?";
-        $params = [$block_id, $year_month];
-
-        if (!empty($selected_category)) {
-            $sql .= " AND pf.category = ?";
-            $params[] = $selected_category;
-        }
-        
-        $stmt_forwarded = $conn->prepare($sql);
-        $stmt_forwarded->execute($params);
-        $forwarded_records = $stmt_forwarded->fetchAll(PDO::FETCH_ASSOC);
-
-        if (empty($forwarded_records)) {
-            echo json_encode(['success' => false, 'message' => 'इस महीने के लिए भुगतान हेतु कोई शिक्षक नहीं मिला।']);
-            exit;
-        }
-
-        function doesTeacherMatch($teacher, $forwarded_records) {
-            foreach ($forwarded_records as $record) {
-                if ($teacher['udise_code'] === $record['school_udise'] && $teacher['category'] === $record['category']) {
-                    $teacher_class = trim($teacher['class']);
-                    $class_group = trim($record['class_group']);
-                    if ($class_group === 'All Classes' || strpos($class_group, $teacher_class) !== false) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        $school_udises = array_unique(array_column($forwarded_records, 'school_udise'));
-        $placeholders = implode(',', array_fill(0, count($school_udises), '?'));
-        $teachers_sql = "SELECT t.name, t.mobile, t.pran_no, t.uan_no, t.class, t.category,
-                           s.name as school_name, s.udise_code
-                           FROM teachers t
-                           JOIN schools s ON t.school_id = s.id
-                           WHERE s.udise_code IN ($placeholders)";
-        
-        $stmt_teachers = $conn->prepare($teachers_sql);
-        $stmt_teachers->execute($school_udises);
-        $all_potential_teachers = $stmt_teachers->fetchAll(PDO::FETCH_ASSOC);
-
-        $final_teachers = [];
-        foreach ($all_potential_teachers as $teacher) {
-            if (doesTeacherMatch($teacher, $forwarded_records)) {
-                $final_teachers[] = $teacher;
-            }
-        }
-
-        if (count($final_teachers) === 0) {
-            echo json_encode(['success' => false, 'message' => 'कोई मेल खाने वाला शिक्षक डेटा नहीं मिला।']);
-            exit;
-        }
-
-        // CSV डेटा तैयार करें
-        $filename = "payment_report_" . $block_id . "_" . $month_name . "_" . $year . ".csv";
-        header('Content-Type: text/csv');
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
-
-        $output = fopen('php://output', 'w');
-        fputcsv($output, ['शिक्षक का नाम', 'मोबाइल नंबर', 'PRAN नंबर', 'UAN नंबर', 'श्रेणी', 'कक्षा', 'विद्यालय का नाम', 'UDISE कोड']);
-        foreach ($final_teachers as $teacher) {
-            fputcsv($output, [$teacher['name'], $teacher['mobile'], $teacher['pran_no'], $teacher['uan_no'], $teacher['category'], $teacher['class'], $teacher['school_name'], $teacher['udise_code']]);
-        }
-        fclose($output);
-        exit;
-
-    } catch (PDOException $e) {
-        echo json_encode(['success' => false, 'message' => 'डेटाबेस त्रुटि: ' . $e->getMessage()]);
-        exit;
-    } catch (Exception $e) {
-        echo json_encode(['success' => false, 'message' => 'एक त्रुटि हुई: ' . $e->getMessage()]);
-        exit;
-    }
 }
 
 // AJAX कॉल के लिए श्रेणियाँ प्राप्त करने का लॉजिक
@@ -136,6 +39,180 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit;
     } catch (Exception $e) {
         echo json_encode([]);
+        exit;
+    }
+}
+
+// AJAX कॉल के लिए कक्षाएं प्राप्त करने का लॉजिक (सुधारा हुआ)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'get_classes') {
+    $month_name = $_POST['month'] ?? null;
+    $year = $_POST['year'] ?? null;
+    $selected_category = $_POST['category'] ?? null;
+
+    if (!$month_name || !$year) {
+        echo json_encode([]);
+        exit;
+    }
+    try {
+        $numeric_month = date('m', strtotime($month_name));
+        $year_month = $year . '-' . $numeric_month;
+
+        $sql = "SELECT DISTINCT class_group FROM pf_submissions pf
+                JOIN schools s ON pf.school_udise = s.udise_code
+                WHERE s.block_id = ? AND pf.status = 'forwarded_to_district' AND pf.month = ?";
+        $params = [$block_id, $year_month];
+
+        if (!empty($selected_category)) {
+            $sql .= " AND pf.category = ?";
+            $params[] = $selected_category;
+        }
+
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($params);
+        $class_groups = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        $all_classes = [];
+        foreach ($class_groups as $class_group) {
+            if ($class_group === 'All Classes') {
+                $all_classes[] = 'All Classes';
+            } else {
+                // मुख्य बदलाव: अब ' & ' सेपरेटर का उपयोग करके तोड़ा जाएगा
+                $classes = explode(' & ', $class_group);
+                foreach ($classes as $class) {
+                    $class = trim($class);
+                    if (!in_array($class, $all_classes) && !empty($class)) {
+                        $all_classes[] = $class;
+                    }
+                }
+            }
+        }
+        sort($all_classes);
+        echo json_encode($all_classes);
+        exit;
+    } catch (Exception $e) {
+        echo json_encode([]);
+        exit;
+    }
+}
+
+// रिपोर्ट जनरेशन का लॉजिक (सुधारा हुआ)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'generate_report') {
+    $month_name = $_POST['month'] ?? null;
+    $year = $_POST['year'] ?? null;
+    $selected_category = $_POST['category'] ?? null;
+    $selected_class = $_POST['class'] ?? null;
+
+    if (!$month_name || !$year) {
+        echo json_encode(['success' => false, 'message' => 'महीना और वर्ष चुनना अनिवार्य है।']);
+        exit;
+    }
+
+    try {
+        $numeric_month = date('m', strtotime($month_name));
+        $year_month = $year . '-' . $numeric_month;
+
+        $sql = "SELECT DISTINCT pf.school_udise, pf.category, pf.class_group
+                FROM pf_submissions pf
+                JOIN schools s ON pf.school_udise = s.udise_code
+                WHERE s.block_id = ? AND pf.status = 'forwarded_to_district' AND pf.month = ?";
+        $params = [$block_id, $year_month];
+
+        if (!empty($selected_category)) {
+            $sql .= " AND pf.category = ?";
+            $params[] = $selected_category;
+        }
+
+        // मुख्य बदलाव: कक्षा फिल्टर के लिए अब LIKE का उपयोग किया जाएगा
+        if (!empty($selected_class) && $selected_class !== 'All Classes') {
+            $sql .= " AND (pf.class_group = 'All Classes' OR pf.class_group LIKE ?)";
+            $params[] = '%' . $selected_class . '%';
+        }
+        
+        $stmt_forwarded = $conn->prepare($sql);
+        $stmt_forwarded->execute($params);
+        $forwarded_records = $stmt_forwarded->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($forwarded_records)) {
+            echo json_encode(['success' => false, 'message' => 'इस महीने के लिए भुगतान हेतु कोई शिक्षक नहीं मिला।']);
+            exit;
+        }
+
+        // मुख्य बदलाव: शिक्षक को मैच करने का लॉजिक बिल्कुल बदल दिया गया है
+        function doesTeacherMatch($teacher, $forwarded_records, $selected_class = null) {
+            foreach ($forwarded_records as $record) {
+                if ($teacher['udise_code'] === $record['school_udise'] && $teacher['category'] === $record['category']) {
+                    $teacher_class = trim($teacher['class']);
+                    $class_group_string = trim($record['class_group']);
+                    
+                    $class_groups_in_record = [];
+                    if ($class_group_string === 'All Classes') {
+                        $class_groups_in_record = ['All Classes'];
+                    } else {
+                        // ' & ' सेपरेटर का उपयोग करके क्लास ग्रुप को अलग करें
+                        $class_groups_in_record = explode(' & ', $class_group_string);
+                    }
+
+                    // जांचें कि क्या शिक्षक की कक्षा, रिकॉर्ड में मौजूद कक्षाओं में से एक है
+                    if (in_array($teacher_class, $class_groups_in_record)) {
+                        // यदि फिल्टर के लिए एक विशिष्ट कक्षा चुनी गई है, तो सुनिश्चित करें कि यह शिक्षक की कक्षा से मेल खाती हो
+                        if ($selected_class && $selected_class !== 'All Classes') {
+                            if ($teacher_class === $selected_class) {
+                                return true;
+                            }
+                        } else {
+                            // कोई विशिष्ट कक्षा फ़िल्टर नहीं है, तो कोई भी मैच मान्य है
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        $school_udises = array_unique(array_column($forwarded_records, 'school_udise'));
+        $placeholders = implode(',', array_fill(0, count($school_udises), '?'));
+        $teachers_sql = "SELECT t.name, t.mobile, t.pran_no, t.uan_no, t.class, t.category,
+                           s.name as school_name, s.udise_code
+                           FROM teachers t
+                           JOIN schools s ON t.school_id = s.id
+                           WHERE s.udise_code IN ($placeholders)";
+        
+        $stmt_teachers = $conn->prepare($teachers_sql);
+        $stmt_teachers->execute($school_udises);
+        $all_potential_teachers = $stmt_teachers->fetchAll(PDO::FETCH_ASSOC);
+
+        $final_teachers = [];
+        foreach ($all_potential_teachers as $teacher) {
+            if (doesTeacherMatch($teacher, $forwarded_records, $selected_class)) {
+                $final_teachers[] = $teacher;
+            }
+        }
+
+        if (count($final_teachers) === 0) {
+            echo json_encode(['success' => false, 'message' => 'कोई मेल खाने वाला शिक्षक डेटा नहीं मिला।']);
+            exit;
+        }
+
+        // CSV डेटा तैयार करें
+        $filename = "payment_report_" . $block_id . "_" . $month_name . "_" . $year . ".csv";
+        header('Content-Type: text/csv');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+
+        $output = fopen('php://output', 'w');
+        // UTF-8 BOM जोड़ें ताकि Excel में हिंदी ठीक से दिखे
+        fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+        fputcsv($output, ['शिक्षक का नाम', 'मोबाइल नंबर', 'PRAN नंबर', 'UAN नंबर', 'श्रेणी', 'कक्षा', 'विद्यालय का नाम', 'UDISE कोड']);
+        foreach ($final_teachers as $teacher) {
+            fputcsv($output, [$teacher['name'], $teacher['mobile'], $teacher['pran_no'], $teacher['uan_no'], $teacher['category'], $teacher['class'], $teacher['school_name'], $teacher['udise_code']]);
+        }
+        fclose($output);
+        exit;
+
+    } catch (PDOException $e) {
+        echo json_encode(['success' => false, 'message' => 'डेटाबेस त्रुटि: ' . $e->getMessage()]);
+        exit;
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'एक त्रुटि हुई: ' . $e->getMessage()]);
         exit;
     }
 }
@@ -387,8 +464,14 @@ ob_end_flush(); // आउटपुट बफ़रिंग को समाप�
                         </div>
                         <div class="col-md-4 mb-3">
                             <label for="category" class="form-label">श्रेणी चुनें (वैकल्पिक)</label>
-                            <select class="form-select" id="category" name="category" disabled>
+                            <select class="form-select" id="category" name="category" >
                                 <option value="">सभी श्रेणियाँ</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="class" class="form-label">कक्षा (वैकल्पिक)</label>
+                            <select class="form-select" id="class" name="class" >
+                                <option value="">सभी कक्षा</option>
                             </select>
                         </div>
                     </div>
@@ -433,6 +516,7 @@ ob_end_flush(); // आउटपुट बफ़रिंग को समाप�
             const $monthSelect = $('#month');
             const $yearSelect = $('#year');
             const $categorySelect = $('#category');
+            const $classSelect = $('#class');
             const $form = $('#reportForm');
             const $downloadBtn = $('#downloadBtn');
             const $spinner = $downloadBtn.find('.spinner-border');
@@ -460,6 +544,7 @@ ob_end_flush(); // आउटपुट बफ़रिंग को समाप�
                                     $categorySelect.append(new Option(cat, cat));
                                 });
                             }
+                            updateClasses();
                         },
                         error: function() {
                             $categorySelect.prop('disabled', false).html('<option value="">श्रेणियाँ लोड करने में त्रुटि</option>');
@@ -467,11 +552,48 @@ ob_end_flush(); // आउटपुट बफ़रिंग को समाप�
                     });
                 } else {
                     $categorySelect.prop('disabled', true).html('<option value="">सभी श्रेणियाँ</option>');
+                    $classSelect.prop('disabled', true).html('<option value="">सभी कक्षा</option>');
+                }
+            }
+
+            function updateClasses() {
+                const month = $monthSelect.val();
+                const year = $yearSelect.val();
+                const category = $categorySelect.val();
+
+                if (month && year) {
+                    $classSelect.prop('disabled', true).html('<option value="">लोड हो रहा है...</option>');
+                    
+                    $.ajax({
+                        url: 'download_payment_report.php',
+                        type: 'POST',
+                        data: {
+                            action: 'get_classes',
+                            month: month,
+                            year: year,
+                            category: category
+                        },
+                        dataType: 'json',
+                        success: function(response) {
+                            $classSelect.prop('disabled', false).html('<option value="">सभी कक्षा</option>');
+                            if (response.length > 0) {
+                                response.forEach(function(cls) {
+                                    $classSelect.append(new Option(cls, cls));
+                                });
+                            }
+                        },
+                        error: function() {
+                            $classSelect.prop('disabled', false).html('<option value="">कक्षाएं लोड करने में त्रुटि</option>');
+                        }
+                    });
+                } else {
+                    $classSelect.prop('disabled', true).html('<option value="">सभी कक्षा</option>');
                 }
             }
 
             $monthSelect.on('change', updateCategories);
             $yearSelect.on('change', updateCategories);
+            $categorySelect.on('change', updateClasses);
 
             $form.on('submit', function(e) {
                 e.preventDefault();
@@ -494,7 +616,6 @@ ob_end_flush(); // आउटपुट बफ़रिंग को समाप�
                             if (this.readyState === 4 && this.status === 200) {
                                 const contentType = this.getResponseHeader('Content-Type');
                                 if (contentType && contentType.indexOf('text/csv') !== -1) {
-                                    // CSV डाउनलोड करें
                                     const blob = new Blob([this.response], { type: 'text/csv' });
                                     const url = window.URL.createObjectURL(blob);
                                     const a = document.createElement('a');
@@ -507,9 +628,12 @@ ob_end_flush(); // आउटपुट बफ़रिंग को समाप�
                                     
                                     showAlert('रिपोर्ट सफलतापूर्वक डाउनलोड की गई!', 'success');
                                 } else {
-                                    // त्रुटि संदेश दिखाएं
-                                    const response = JSON.parse(this.response);
-                                    showAlert('त्रुटि: ' + response.message, 'danger');
+                                    try {
+                                        const response = JSON.parse(this.response);
+                                        showAlert('त्रुटि: ' + response.message, 'danger');
+                                    } catch (e) {
+                                        showAlert('रिपोर्ट जनरेट करने में एक अज्ञात त्रुटि हुई।', 'danger');
+                                    }
                                 }
                             }
                         };
